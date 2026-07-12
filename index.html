@@ -340,13 +340,18 @@
         <div class="trendChart" id="trendChart"></div>
       </div>
 
+      <div class="segControl" id="chartScopeControl" style="margin-bottom:14px;">
+        <button type="button" id="chartScopeToday" data-scope="today">Μέχρι σήμερα</button>
+        <button type="button" id="chartScopeMonth" data-scope="month" class="active">Όλος ο μήνας</button>
+      </div>
+
       <div class="card">
-        <h2>Έξοδα ανά κατηγορία (τρέχων μήνας)</h2>
+        <h2 id="expenseBreakdownTitle">Έξοδα ανά κατηγορία (τρέχων μήνας)</h2>
         <div id="expenseBreakdown"></div>
       </div>
 
       <div class="card">
-        <h2>Έσοδα ανά κατηγορία (τρέχων μήνας)</h2>
+        <h2 id="incomeBreakdownTitle">Έσοδα ανά κατηγορία (τρέχων μήνας)</h2>
         <div id="incomeBreakdown"></div>
       </div>
     </section>
@@ -408,6 +413,7 @@
   var LAST_BACKUP_KEY = "tp_lastbackup_v2";
   var INCLUDE_FUTURE_KEY = "tp_include_future_v1";
   var FUTURE_CUTOFF_KEY = "tp_future_cutoff_v1";
+  var CHART_SCOPE_KEY = "tp_chart_scope_v1";
   var DEFAULT_REF = "2026-07-01";
   var IDLE_LIMIT_MS = 5 * 60 * 1000;
   var PRF_INFO = "TakisPlanBiometricUnlockV1";
@@ -832,6 +838,12 @@
     /* Month nav - dashboard */
     $("prevMonth").addEventListener("click", function(){ state.dashMonth = shiftMonth(state.dashMonth,-1); renderDashboard(); });
     $("nextMonth").addEventListener("click", function(){ state.dashMonth = shiftMonth(state.dashMonth,1); renderDashboard(); });
+    document.querySelectorAll("#chartScopeControl button").forEach(function(b){
+      b.addEventListener("click", function(){
+        localStorage.setItem(CHART_SCOPE_KEY, b.getAttribute("data-scope"));
+        renderCharts();
+      });
+    });
     $("includeFutureToggle").addEventListener("change", function(){
       var checked = $("includeFutureToggle").checked;
       localStorage.setItem(INCLUDE_FUTURE_KEY, checked ? "1" : "0");
@@ -1053,10 +1065,10 @@
     });
     return income-expense;
   }
-  function categoryBreakdown(ym, type){
+  function categoryBreakdown(ym, type, cutoffDate){
     var map = {};
     entries.forEach(function(e){
-      if (monthKey(e.date)===ym && e.type===type){
+      if (monthKey(e.date)===ym && e.type===type && (!cutoffDate || e.date <= cutoffDate)){
         map[e.category] = (map[e.category]||0) + e.amount;
       }
     });
@@ -1172,8 +1184,16 @@
         '</div><div class="lab">'+mn+'</div></div>';
     }).join("");
 
-    renderBreakdown("expenseBreakdown", categoryBreakdown(state.dashMonth,"expense"), "var(--red)");
-    renderBreakdown("incomeBreakdown", categoryBreakdown(state.dashMonth,"income"), "var(--green)");
+    var chartScope = localStorage.getItem(CHART_SCOPE_KEY) || "month";
+    document.querySelectorAll("#chartScopeControl button").forEach(function(b){
+      b.classList.toggle("active", b.getAttribute("data-scope")===chartScope);
+    });
+    var cutoff = chartScope === "today" ? todayStr() : null;
+    var scopeLabel = chartScope === "today" ? "μέχρι σήμερα" : "τρέχων μήνας";
+    $("expenseBreakdownTitle").textContent = "Έξοδα ανά κατηγορία (" + scopeLabel + ")";
+    $("incomeBreakdownTitle").textContent = "Έσοδα ανά κατηγορία (" + scopeLabel + ")";
+    renderBreakdown("expenseBreakdown", categoryBreakdown(state.dashMonth,"expense",cutoff), "var(--red)");
+    renderBreakdown("incomeBreakdown", categoryBreakdown(state.dashMonth,"income",cutoff), "var(--green)");
   }
 
   function renderBreakdown(elId, arr, color){
