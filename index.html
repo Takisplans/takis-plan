@@ -146,6 +146,7 @@
   .entryRow .amt.income{color:var(--green);}
   .entryRow .amt.expense{color:var(--red);}
   .entryRow .del{background:none; border:none; color:#c2c8d6; font-size:18px; padding:4px 6px; margin-left:8px;}
+  .entryRow .editBtn{background:none; border:none; color:var(--accent); font-size:16px; padding:4px 6px; margin-left:4px;}
   .emptyMsg{text-align:center; color:var(--muted); font-size:14px; padding:30px 10px;}
 
   /* ---------- Charts ---------- */
@@ -945,7 +946,7 @@
     var days = Object.keys(byDay).sort().reverse();
     box.innerHTML = days.map(function(d){
       var rows = byDay[d].map(function(e){
-        return '<div class="entryRow"><div class="l"><span class="cat">'+escapeHtml(e.category)+'</span>'+(e.note?'<span class="note">'+escapeHtml(e.note)+'</span>':'')+'</div><div style="display:flex;align-items:center;"><div class="amt '+e.type+'">'+(e.type==="income"?"+":"-")+money(e.amount)+'</div><button class="del" data-id="'+e.id+'">✕</button></div></div>';
+        return '<div class="entryRow"><div class="l"><span class="cat">'+escapeHtml(e.category)+'</span>'+(e.note?'<span class="note">'+escapeHtml(e.note)+'</span>':'')+'</div><div style="display:flex;align-items:center;"><div class="amt '+e.type+'">'+(e.type==="income"?"+":"-")+money(e.amount)+'</div><button class="editBtn" data-id="'+e.id+'">✎</button><button class="del" data-id="'+e.id+'">✕</button></div></div>';
       }).join("");
       return '<div class="dayGroup"><div class="dh">'+d.split("-").reverse().join("/")+'</div>'+rows+'</div>';
     }).join("");
@@ -955,6 +956,11 @@
         entries = entries.filter(function(e){ return e.id !== id; });
         saveVault();
         renderHistory();
+      });
+    });
+    box.querySelectorAll(".editBtn").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        openEditEntryModal(btn.getAttribute("data-id"));
       });
     });
   }
@@ -1100,6 +1106,75 @@
     });
   }
   function closeModal(){ $("modalHost").innerHTML = ""; }
+
+  function openEditEntryModal(id){
+    var entry = entries.find(function(e){ return e.id === id; });
+    if (!entry) return;
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>Επεξεργασία καταχώρησης</h3>'+
+      '<div class="segControl">'+
+        '<button type="button" id="editSegIncome" class="income">Έσοδο</button>'+
+        '<button type="button" id="editSegExpense" class="expense">Έξοδο</button>'+
+      '</div>'+
+      '<label class="fl">Κατηγορία</label>'+
+      '<select class="field" id="editCategory"></select>'+
+      '<label class="fl">Ποσό (€)</label>'+
+      '<input class="field" id="editAmount" type="number" inputmode="decimal" step="0.01">'+
+      '<label class="fl">Ημερομηνία</label>'+
+      '<input class="field" id="editDate" type="date">'+
+      '<label class="fl">Σημείωση (προαιρετικό)</label>'+
+      '<input class="field" id="editNote" type="text">'+
+      '<div class="lockErr" id="editErr"></div>'+
+      '<div class="modalActions"><button class="cancel" id="editCancel">Άκυρο</button><button class="confirm" id="editSave">Αποθήκευση</button></div>'+
+      '</div>'
+    );
+
+    var editType = entry.type;
+    function fillCategories(type){
+      var sel = $("editCategory");
+      sel.innerHTML = "";
+      var cats = type==="income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+      cats.forEach(function(c){
+        var opt = document.createElement("option");
+        opt.value = c; opt.textContent = c;
+        if (c === entry.category) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+    function setEditType(type){
+      editType = type;
+      $("editSegIncome").classList.toggle("active", type==="income");
+      $("editSegExpense").classList.toggle("active", type==="expense");
+      fillCategories(type);
+    }
+    $("editSegIncome").addEventListener("click", function(){ setEditType("income"); });
+    $("editSegExpense").addEventListener("click", function(){ setEditType("expense"); });
+    setEditType(entry.type);
+
+    $("editAmount").value = entry.amount;
+    $("editDate").value = entry.date;
+    $("editNote").value = entry.note || "";
+
+    $("editCancel").addEventListener("click", closeModal);
+    $("editSave").addEventListener("click", function(){
+      var amount = parseFloat($("editAmount").value);
+      var date = $("editDate").value;
+      var category = $("editCategory").value;
+      var note = $("editNote").value.trim();
+      if (!amount || amount<=0){ $("editErr").textContent = "Γράψε ένα έγκυρο ποσό"; return; }
+      if (!date){ $("editErr").textContent = "Διάλεξε ημερομηνία"; return; }
+      entry.type = editType;
+      entry.category = category;
+      entry.amount = amount;
+      entry.date = date;
+      entry.note = note;
+      saveVault();
+      closeModal();
+      renderHistory();
+      renderDashboard();
+    });
+  }
 
   function openChangePwModal(){
     openModal(
