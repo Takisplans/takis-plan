@@ -50,7 +50,11 @@
   }
   .lockBtn:active{opacity:.85;}
   .lockBtn:disabled{opacity:.6;}
-  .bioBtn{background:var(--accent); margin-top:10px;}
+  .bioBtn{background:var(--accent); margin-top:4px;}
+  .linkBtn{
+    width:100%; background:none; border:none; color:var(--accent); font-size:13px;
+    padding:10px 4px; text-decoration:underline; margin-top:2px;
+  }
   .lockErr{color:var(--red); font-size:13px; min-height:18px; margin-top:8px;}
   .lockHint{color:var(--muted); font-size:12px; margin-top:18px; line-height:1.4;}
 
@@ -190,10 +194,15 @@
   <div class="lockCard">
     <h1>Takis Plan</h1>
     <p class="sub" id="lockSub">Δημιούργησε έναν κωδικό για να προστατέψεις την εφαρμογή</p>
+
+    <button class="lockBtn bioBtn hidden" id="bioBtn">👆 Βιομετρικό Unlock</button>
+    <button class="linkBtn hidden" id="usePasswordLink">Χρήση κωδικού αντί γι' αυτό</button>
+
     <input type="password" id="pw1" placeholder="Κωδικός" inputmode="text">
     <input type="password" id="pw2" placeholder="Επιβεβαίωση κωδικού" class="hidden">
     <button class="lockBtn" id="lockBtn">Δημιουργία κωδικού</button>
-    <button class="lockBtn bioBtn hidden" id="bioBtn">👆 Βιομετρικό Unlock</button>
+    <button class="linkBtn hidden" id="useBioLink">👆 Χρήση βιομετρικού αντί γι' αυτό</button>
+
     <div class="lockErr" id="lockErr"></div>
     <div class="lockHint">Τα δεδομένα σου κρυπτογραφούνται (AES-256) με κλειδί που παράγεται από τον κωδικό ή το βιομετρικό σου και μένουν μόνο στη συσκευή σου.</div>
   </div>
@@ -530,6 +539,27 @@
   /* ================= Lock screen ================= */
   var lockScreen = $("lockScreen"), appEl = $("app");
   var pw1 = $("pw1"), pw2 = $("pw2"), lockBtn = $("lockBtn"), lockErr = $("lockErr"), lockSub = $("lockSub"), bioBtn = $("bioBtn");
+  var usePasswordLink = $("usePasswordLink"), useBioLink = $("useBioLink");
+
+  function showPasswordView(){
+    bioBtn.classList.add("hidden");
+    usePasswordLink.classList.add("hidden");
+    pw1.classList.remove("hidden");
+    lockBtn.classList.remove("hidden");
+    if (hasBiometric()) useBioLink.classList.remove("hidden");
+    lockErr.textContent = "";
+    pw1.focus();
+  }
+  function showBiometricView(autoTrigger){
+    pw1.classList.add("hidden");
+    pw2.classList.add("hidden");
+    lockBtn.classList.add("hidden");
+    useBioLink.classList.add("hidden");
+    bioBtn.classList.remove("hidden");
+    usePasswordLink.classList.remove("hidden");
+    lockErr.textContent = "";
+    if (autoTrigger) setTimeout(function(){ bioBtn.click(); }, 250);
+  }
 
   function setupLockUI(){
     if (!cryptoAvailable){
@@ -538,17 +568,27 @@
       return;
     }
     if (hasVault()){
-      lockSub.textContent = "Εισήγαγε τον κωδικό σου";
       pw2.classList.add("hidden");
       lockBtn.textContent = "Είσοδος";
-      if (hasBiometric()) bioBtn.classList.remove("hidden");
+      if (hasBiometric()){
+        lockSub.textContent = "Χρησιμοποίησε το βιομετρικό σου για είσοδο";
+        showBiometricView(true);
+      } else {
+        lockSub.textContent = "Εισήγαγε τον κωδικό σου";
+        showPasswordView();
+      }
     } else {
       lockSub.textContent = "Δημιούργησε έναν κωδικό για να προστατέψεις την εφαρμογή";
       pw2.classList.remove("hidden");
       lockBtn.textContent = "Δημιουργία κωδικού";
+      bioBtn.classList.add("hidden");
+      usePasswordLink.classList.add("hidden");
+      useBioLink.classList.add("hidden");
     }
   }
   setupLockUI();
+  usePasswordLink.addEventListener("click", showPasswordView);
+  useBioLink.addEventListener("click", function(){ showBiometricView(false); });
 
   function shakeErr(msg){
     lockErr.textContent = msg;
