@@ -1,5 +1,5 @@
 // Bump CACHE_NAME on every release so old caches get cleared and clients pick up new files.
-const CACHE_NAME = 'takisplan-cache-v10';
+const CACHE_NAME = 'takisplan-cache-v11';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {

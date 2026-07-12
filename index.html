@@ -347,11 +347,13 @@
 
       <div class="card">
         <h2 id="expenseBreakdownTitle">Έξοδα ανά κατηγορία (τρέχων μήνας)</h2>
+        <div id="expenseBreakdownTotal" style="font-weight:800; font-size:16px; color:var(--red); margin:-4px 0 14px;">Σύνολο: 0,00 €</div>
         <div id="expenseBreakdown"></div>
       </div>
 
       <div class="card">
         <h2 id="incomeBreakdownTitle">Έσοδα ανά κατηγορία (τρέχων μήνας)</h2>
+        <div id="incomeBreakdownTotal" style="font-weight:800; font-size:16px; color:var(--green); margin:-4px 0 14px;">Σύνολο: 0,00 €</div>
         <div id="incomeBreakdown"></div>
       </div>
     </section>
@@ -1192,8 +1194,14 @@
     var scopeLabel = chartScope === "today" ? "μέχρι σήμερα" : "τρέχων μήνας";
     $("expenseBreakdownTitle").textContent = "Έξοδα ανά κατηγορία (" + scopeLabel + ")";
     $("incomeBreakdownTitle").textContent = "Έσοδα ανά κατηγορία (" + scopeLabel + ")";
-    renderBreakdown("expenseBreakdown", categoryBreakdown(state.dashMonth,"expense",cutoff), "var(--red)");
-    renderBreakdown("incomeBreakdown", categoryBreakdown(state.dashMonth,"income",cutoff), "var(--green)");
+    var expData = categoryBreakdown(state.dashMonth,"expense",cutoff);
+    var incData = categoryBreakdown(state.dashMonth,"income",cutoff);
+    var expTotal = expData.reduce(function(s,a){ return s+a.amount; }, 0);
+    var incTotal = incData.reduce(function(s,a){ return s+a.amount; }, 0);
+    $("expenseBreakdownTotal").textContent = "Σύνολο: " + money(expTotal);
+    $("incomeBreakdownTotal").textContent = "Σύνολο: " + money(incTotal);
+    renderBreakdown("expenseBreakdown", expData, "var(--red)");
+    renderBreakdown("incomeBreakdown", incData, "var(--green)");
   }
 
   function renderBreakdown(elId, arr, color){
