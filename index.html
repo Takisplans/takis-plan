@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Takis Plan</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#12213f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Takis Plan">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+
+<style>
+  :root{
+    --navy:#12213f; --navy2:#1a2c52; --green:#2e7d32; --green-l:#e8f5e9;
+    --red:#c62828; --red-l:#fdecea; --bg:#f4f6fb; --card:#ffffff;
+    --text:#1c2333; --muted:#6b7488; --border:#e3e7f0; --accent:#3f6fd1;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--text); overscroll-behavior:none;
+  }
+  .hidden{display:none !important;}
+  button{font-family:inherit; cursor:pointer;}
+  input,select{font-family:inherit;}
+
+  /* ---------- Lock screen ---------- */
+  #lockScreen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(160deg,var(--navy),var(--navy2));
+    padding:24px;
+  }
+  .lockCard{
+    background:var(--card); border-radius:20px; padding:32px 24px; width:100%; max-width:360px;
+    box-shadow:0 20px 50px rgba(0,0,0,.35); text-align:center;
+  }
+  .lockCard h1{margin:0 0 4px; font-size:24px; color:var(--navy);}
+  .lockCard p.sub{color:var(--muted); margin:0 0 24px; font-size:14px;}
+  .lockCard input{
+    width:100%; padding:14px 16px; border-radius:12px; border:1.5px solid var(--border);
+    font-size:16px; margin-bottom:12px; background:#f8f9fc;
+  }
+  .lockCard input:focus{outline:none; border-color:var(--accent);}
+  .lockBtn{
+    width:100%; padding:14px; border-radius:12px; border:none; background:var(--navy);
+    color:#fff; font-size:16px; font-weight:600; margin-top:4px;
+  }
+  .lockBtn:active{opacity:.85;}
+  .lockBtn:disabled{opacity:.6;}
+  .lockErr{color:var(--red); font-size:13px; min-height:18px; margin-top:8px;}
+  .lockHint{color:var(--muted); font-size:12px; margin-top:18px; line-height:1.4;}
+
+  /* ---------- App shell ---------- */
+  #app{min-height:100vh; display:flex; flex-direction:column; padding-bottom:70px;}
+  header.top{
+    background:var(--navy); color:#fff; padding:18px 20px 16px;
+    display:flex; align-items:center; justify-content:space-between;
+    position:sticky; top:0; z-index:5;
+  }
+  header.top h1{font-size:19px; margin:0; font-weight:700; letter-spacing:.3px;}
+  header.top .gear{font-size:20px; opacity:.9; padding:4px;}
+
+  main{flex:1; padding:16px; max-width:640px; margin:0 auto; width:100%;}
+
+  nav.tabs{
+    position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--border);
+    display:flex; z-index:10; padding-bottom:env(safe-area-inset-bottom);
+  }
+  nav.tabs button{
+    flex:1; border:none; background:none; padding:10px 2px 8px; font-size:11px; color:var(--muted);
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+  }
+  nav.tabs button .ic{font-size:19px;}
+  nav.tabs button.active{color:var(--navy); font-weight:700;}
+
+  .card{
+    background:var(--card); border-radius:16px; padding:18px; margin-bottom:14px;
+    box-shadow:0 2px 10px rgba(20,30,60,.05); border:1px solid var(--border);
+  }
+  .card h2{margin:0 0 12px; font-size:15px; color:var(--navy);}
+
+  .monthNav{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .monthNav button{
+    background:var(--navy); color:#fff; border:none; width:36px; height:36px; border-radius:10px; font-size:16px;
+  }
+  .monthNav .label{font-weight:700; font-size:16px; text-transform:capitalize;}
+
+  .statRow{display:flex; gap:10px; margin-bottom:14px;}
+  .stat{
+    flex:1; border-radius:14px; padding:14px; text-align:center;
+  }
+  .stat.income{background:var(--green-l); color:var(--green);}
+  .stat.expense{background:var(--red-l); color:var(--red);}
+  .stat.net{background:#eef2fb; color:var(--navy);}
+  .stat .v{font-size:17px; font-weight:800;}
+  .stat .l{font-size:11px; margin-top:4px; opacity:.85;}
+
+  .bigNet{
+    border-radius:16px; padding:18px; text-align:center; color:#fff; margin-bottom:14px;
+    background:linear-gradient(135deg,var(--navy),var(--accent));
+  }
+  .bigNet .v{font-size:26px; font-weight:800;}
+  .bigNet .l{font-size:12px; opacity:.85; margin-top:4px;}
+
+  /* ---------- Form ---------- */
+  .segControl{display:flex; background:#eef1f7; border-radius:12px; padding:4px; margin-bottom:16px;}
+  .segControl button{
+    flex:1; border:none; background:none; padding:10px; border-radius:9px; font-weight:600; font-size:14px; color:var(--muted);
+  }
+  .segControl button.active.income{background:var(--green); color:#fff;}
+  .segControl button.active.expense{background:var(--red); color:#fff;}
+
+  label.fl{display:block; font-size:13px; color:var(--muted); margin:12px 0 6px;}
+  .field{
+    width:100%; padding:13px 14px; border-radius:12px; border:1.5px solid var(--border);
+    font-size:16px; background:#f8f9fc;
+  }
+  .field:focus{outline:none; border-color:var(--accent);}
+  textarea.field{resize:none; min-height:60px;}
+
+  .submitBtn{
+    width:100%; padding:14px; border-radius:12px; border:none; color:#fff; font-weight:700; font-size:16px; margin-top:18px;
+  }
+  .submitBtn.income{background:var(--green);}
+  .submitBtn.expense{background:var(--red);}
+
+  /* ---------- History ---------- */
+  .dayGroup{margin-bottom:10px;}
+  .dayGroup .dh{font-size:12px; color:var(--muted); font-weight:700; margin:14px 2px 6px; text-transform:uppercase;}
+  .entryRow{
+    display:flex; align-items:center; justify-content:space-between; background:#fff;
+    border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:8px;
+  }
+  .entryRow .l{display:flex; flex-direction:column; gap:2px;}
+  .entryRow .cat{font-weight:600; font-size:14px;}
+  .entryRow .note{font-size:12px; color:var(--muted);}
+  .entryRow .amt{font-weight:800; font-size:15px;}
+  .entryRow .amt.income{color:var(--green);}
+  .entryRow .amt.expense{color:var(--red);}
+  .entryRow .del{background:none; border:none; color:#c2c8d6; font-size:18px; padding:4px 6px; margin-left:8px;}
+  .emptyMsg{text-align:center; color:var(--muted); font-size:14px; padding:30px 10px;}
+
+  /* ---------- Charts ---------- */
+  .barChartRow{display:flex; align-items:center; gap:10px; margin-bottom:10px; font-size:13px;}
+  .barChartRow .bcl{width:110px; flex-shrink:0; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .barChartRow .bwrap{flex:1; background:#eef1f7; border-radius:6px; height:16px; position:relative; overflow:hidden;}
+  .barChartRow .bfill{height:100%; border-radius:6px;}
+  .barChartRow .bval{width:64px; text-align:right; font-weight:700; flex-shrink:0;}
+
+  .trendChart{display:flex; align-items:flex-end; gap:10px; height:150px; padding:10px 4px 0;}
+  .trendCol{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;}
+  .trendBars{display:flex; align-items:flex-end; gap:3px; height:120px;}
+  .trendBars .bar{width:11px; border-radius:3px 3px 0 0;}
+  .trendCol .lab{font-size:10px; color:var(--muted); margin-top:6px; text-transform:capitalize;}
+
+  .legendRow{display:flex; gap:16px; justify-content:center; margin-bottom:8px; font-size:12px; color:var(--muted);}
+  .legendRow span.dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px;}
+
+  /* ---------- Settings ---------- */
+  .settingsBtn{
+    width:100%; text-align:left; background:#fff; border:1px solid var(--border); border-radius:12px;
+    padding:14px; margin-bottom:10px; font-size:14px; font-weight:600; color:var(--text);
+  }
+  .settingsBtn.danger{color:var(--red);}
+  .secNote{font-size:13px; color:var(--muted); line-height:1.55; margin:0;}
+  .backupMeta{font-size:12px; color:var(--muted); margin:-2px 0 14px 4px;}
+  .modalOverlay{
+    position:fixed; inset:0; background:rgba(10,15,30,.5); display:flex; align-items:center; justify-content:center;
+    z-index:50; padding:20px;
+  }
+  .modalBox{background:#fff; border-radius:16px; padding:22px; width:100%; max-width:340px;}
+  .modalBox h3{margin:0 0 14px; font-size:16px;}
+  .modalBox p{margin:0 0 10px;}
+  .modalActions{display:flex; gap:10px; margin-top:16px;}
+  .modalActions button{flex:1; padding:12px; border-radius:10px; border:none; font-weight:600;}
+  .modalActions .cancel{background:#eef1f7; color:var(--text);}
+  .modalActions .confirm{background:var(--navy); color:#fff;}
+  .modalActions .confirm.danger{background:var(--red);}
+  .modalActions .confirm:disabled{opacity:.6;}
+</style>
+</head>
+<body>
+
+<!-- ============ LOCK SCREEN ============ -->
+<div id="lockScreen">
+  <div class="lockCard">
+    <h1>Takis Plan</h1>
+    <p class="sub" id="lockSub">Δημιούργησε έναν κωδικό για να προστατέψεις την εφαρμογή</p>
+    <input type="password" id="pw1" placeholder="Κωδικός" inputmode="text">
+    <input type="password" id="pw2" placeholder="Επιβεβαίωση κωδικού" class="hidden">
+    <button class="lockBtn" id="lockBtn">Δημιουργία κωδικού</button>
+    <div class="lockErr" id="lockErr"></div>
+    <div class="lockHint">Τα δεδομένα σου κρυπτογραφούνται (AES-256) με κλειδί που παράγεται από τον κωδικό σου και μένουν μόνο στη συσκευή σου.</div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="hidden">
+  <header class="top">
+    <h1>💰 Takis Plan</h1>
+    <button class="gear" id="gearBtn" style="background:none;border:none;color:#fff;">⚙️</button>
+  </header>
+
+  <main>
+    <!-- Dashboard -->
+    <section id="view-dashboard">
+      <div class="monthNav">
+        <button id="prevMonth">‹</button>
+        <div class="label" id="monthLabel">—</div>
+        <button id="nextMonth">›</button>
+      </div>
+
+      <div class="statRow">
+        <div class="stat income"><div class="v" id="dIncome">0,00 €</div><div class="l">Έσοδα μήνα</div></div>
+        <div class="stat expense"><div class="v" id="dExpense">0,00 €</div><div class="l">Έξοδα μήνα</div></div>
+      </div>
+
+      <div class="bigNet">
+        <div class="v" id="dNet">0,00 €</div>
+        <div class="l">Αποταμίευση μήνα</div>
+      </div>
+
+      <div class="card">
+        <h2 id="cumulTitle">Συνολική αποταμίευση</h2>
+        <div class="bigNet" style="background:linear-gradient(135deg,#1b5e20,#2e7d32); margin-bottom:0;">
+          <div class="v" id="dCumul">0,00 €</div>
+          <div class="l" id="cumulSub">από 01/07/2026</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Τελευταίες κινήσεις</h2>
+        <div id="recentList"></div>
+      </div>
+    </section>
+
+    <!-- Add entry -->
+    <section id="view-add" class="hidden">
+      <div class="card">
+        <div class="segControl">
+          <button id="segIncome" class="income">Έσοδο</button>
+          <button id="segExpense" class="expense">Έξοδο</button>
+        </div>
+
+        <label class="fl">Κατηγορία</label>
+        <select class="field" id="fCategory"></select>
+
+        <label class="fl">Ποσό (€)</label>
+        <input class="field" id="fAmount" type="number" inputmode="decimal" step="0.01" placeholder="0.00">
+
+        <label class="fl">Ημερομηνία</label>
+        <input class="field" id="fDate" type="date">
+
+        <label class="fl">Σημείωση (προαιρετικό)</label>
+        <input class="field" id="fNote" type="text" placeholder="π.χ. Μισθός Ιουλίου">
+
+        <button class="submitBtn income" id="submitEntry">Καταχώρηση</button>
+      </div>
+    </section>
+
+    <!-- History -->
+    <section id="view-history" class="hidden">
+      <div class="monthNav">
+        <button id="prevMonthH">‹</button>
+        <div class="label" id="monthLabelH">—</div>
+        <button id="nextMonthH">›</button>
+      </div>
+      <div id="historyList"></div>
+    </section>
+
+    <!-- Charts -->
+    <section id="view-charts" class="hidden">
+      <div class="card">
+        <h2>Τάση 6 μηνών (Έσοδα / Έξοδα)</h2>
+        <div class="legendRow">
+          <span><span class="dot" style="background:var(--green);"></span>Έσοδα</span>
+          <span><span class="dot" style="background:var(--red);"></span>Έξοδα</span>
+        </div>
+        <div class="trendChart" id="trendChart"></div>
+      </div>
+
+      <div class="card">
+        <h2>Έξοδα ανά κατηγορία (τρέχων μήνας)</h2>
+        <div id="expenseBreakdown"></div>
+      </div>
+
+      <div class="card">
+        <h2>Έσοδα ανά κατηγορία (τρέχων μήνας)</h2>
+        <div id="incomeBreakdown"></div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="hidden">
+      <div class="card">
+        <h2>🔐 Ασφάλεια</h2>
+        <p class="secNote">Όλα τα δεδομένα σου (έσοδα, έξοδα, αντίγραφα ασφαλείας) κρυπτογραφούνται με AES-256 χρησιμοποιώντας κλειδί που παράγεται από τον κωδικό σου (PBKDF2, 200.000 επαναλήψεις). Χωρίς τον σωστό κωδικό, κανείς δεν μπορεί να διαβάσει τα δεδομένα — ούτε από τη μνήμη του κινητού, ούτε από αρχείο backup που τυχόν σταλεί/αποθηκευτεί αλλού. Η εφαρμογή κλειδώνει αυτόματα όταν αλλάζεις εφαρμογή/οθόνη ή μετά από 5 λεπτά αδράνειας.</p>
+      </div>
+
+      <div class="card">
+        <h2>Αντίγραφο ασφαλείας</h2>
+        <button class="settingsBtn" id="backupExportBtn">💾 Δημιουργία αντιγράφου ασφαλείας</button>
+        <div class="backupMeta" id="lastBackupLabel">Δεν έχει γίνει ακόμα αντίγραφο ασφαλείας</div>
+        <button class="settingsBtn" id="backupImportBtn">📥 Επαναφορά από αντίγραφο ασφαλείας</button>
+        <input type="file" id="importFile" accept="application/json,.json" class="hidden">
+      </div>
+
+      <div class="card">
+        <h2>Λογαριασμός</h2>
+        <button class="settingsBtn" id="changePwBtn">🔑 Αλλαγή κωδικού</button>
+        <button class="settingsBtn" id="changeRefBtn">📅 Ημερομηνία έναρξης αποταμίευσης</button>
+        <button class="settingsBtn danger" id="resetDataBtn">🗑️ Διαγραφή όλων των δεδομένων</button>
+        <button class="settingsBtn" id="lockNowBtn">🔒 Κλείδωμα εφαρμογής</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-tab="dashboard" class="active"><span class="ic">🏠</span>Αρχική</button>
+    <button data-tab="add"><span class="ic">➕</span>Νέα</button>
+    <button data-tab="history"><span class="ic">📋</span>Ιστορικό</button>
+    <button data-tab="charts"><span class="ic">📊</span>Γραφήματα</button>
+    <button data-tab="settings"><span class="ic">⚙️</span>Ρυθμίσεις</button>
+  </nav>
+</div>
+
+<div id="modalHost"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ================= Helpers ================= */
+  var $ = function(id){ return document.getElementById(id); };
+  var SALT_KEY = "tp_salt_v2";
+  var VAULT_KEY = "tp_vault_v2";
+  var LAST_BACKUP_KEY = "tp_lastbackup_v2";
+  var DEFAULT_REF = "2026-07-01";
+  var IDLE_LIMIT_MS = 5 * 60 * 1000;
+
+  function money(n){
+    n = Number(n)||0;
+    return n.toLocaleString("el-GR", {minimumFractionDigits:2, maximumFractionDigits:2}) + " €";
+  }
+  function pad(n){ return n<10 ? "0"+n : ""+n; }
+  function todayStr(){
+    var d = new Date();
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+  }
+  function monthKey(dateStr){ return dateStr.slice(0,7); }
+  var MONTH_NAMES = ["Ιανουάριος","Φεβρουάριος","Μάρτιος","Απρίλιος","Μάιος","Ιούνιος","Ιούλιος","Αύγουστος","Σεπτέμβριος","Οκτώβριος","Νοέμβριος","Δεκέμβριος"];
+  function monthLabel(ym){
+    var parts = ym.split("-"); var y = parts[0], m = parseInt(parts[1],10);
+    return MONTH_NAMES[m-1] + " " + y;
+  }
+  function shiftMonth(ym, delta){
+    var parts = ym.split("-"); var y = parseInt(parts[0],10), m = parseInt(parts[1],10);
+    m += delta;
+    while(m>12){ m-=12; y++; }
+    while(m<1){ m+=12; y--; }
+    return y+"-"+pad(m);
+  }
+  function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  var INCOME_CATEGORIES = ["Μισθός","Δώρο Πάσχα","Δώρο Χριστουγέννων","Επίδομα Αδείας","Bonus","Έσοδα από Τυχερά Παιχνίδια","Έσοδα από 2η Εργασία","Άλλο Έσοδο"];
+  var EXPENSE_CATEGORIES = ["Ενοίκιο Σπίτι","ΔΕΗ Ρεύμα","ΔΕΗ Internet","Cosmote TV","Ασφάλεια Γιώργου","Ασφάλεια Αυτοκινήτου","Δάνειο από Εργοδότη","Διατροφή Διαζυγίου","Βενζίνη Αυτοκινήτου","Διόδια","Supermarket","Οικιακές Συνεργασίες","Πετρέλαιο Θέρμανσης","Φαγητό από Έξω","Καπνικά","Συνδρομές σε apps","Έκτακτα Έξοδα","Μετακίνηση (Μετρό κτλ)","Ταξί","VODAFONE","Διακοπές/Ενοικίαση","Εφορία","ΕΦΚΑ","Διασκέδαση","Άλλο Έξοδο"];
+
+  /* ================= Crypto layer (AES-256-GCM, key derived via PBKDF2) ================= */
+  function bytesToBase64(bytes){
+    var bin = "";
+    for (var i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function base64ToBytes(b64){
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function randomSaltB64(){
+    return bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
+  }
+  function deriveKey(password, saltB64){
+    var enc = new TextEncoder();
+    var salt = base64ToBytes(saltB64);
+    return crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"])
+      .then(function(baseKey){
+        return crypto.subtle.deriveKey(
+          { name:"PBKDF2", salt: salt, iterations: 200000, hash:"SHA-256" },
+          baseKey,
+          { name:"AES-GCM", length:256 },
+          false,
+          ["encrypt","decrypt"]
+        );
+      });
+  }
+  function encryptObj(key, obj){
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    var enc = new TextEncoder();
+    var data = enc.encode(JSON.stringify(obj));
+    return crypto.subtle.encrypt({name:"AES-GCM", iv:iv}, key, data).then(function(cipher){
+      return { iv: bytesToBase64(iv), data: bytesToBase64(new Uint8Array(cipher)) };
+    });
+  }
+  function decryptObj(key, payload){
+    var iv = base64ToBytes(payload.iv);
+    var data = base64ToBytes(payload.data);
+    return crypto.subtle.decrypt({name:"AES-GCM", iv:iv}, key, data).then(function(plain){
+      return JSON.parse(new TextDecoder().decode(plain));
+    });
+  }
+  var cryptoAvailable = !!(window.crypto && window.crypto.subtle);
+
+  /* ================= Vault state ================= */
+  var sessionKey = null;      // CryptoKey, only in memory while unlocked
+  var entries = [];
+  var refDate = DEFAULT_REF;
+  var appUnlocked = false;
+
+  function hasVault(){
+    return !!(localStorage.getItem(SALT_KEY) && localStorage.getItem(VAULT_KEY));
+  }
+  function saveVault(){
+    if (!sessionKey) return Promise.resolve();
+    return encryptObj(sessionKey, { entries: entries, refDate: refDate }).then(function(payload){
+      localStorage.setItem(VAULT_KEY, JSON.stringify(payload));
+    });
+  }
+
+  /* ================= Lock screen ================= */
+  var lockScreen = $("lockScreen"), appEl = $("app");
+  var pw1 = $("pw1"), pw2 = $("pw2"), lockBtn = $("lockBtn"), lockErr = $("lockErr"), lockSub = $("lockSub");
+
+  function setupLockUI(){
+    if (!cryptoAvailable){
+      lockSub.textContent = "Ο browser σου δεν υποστηρίζει κρυπτογράφηση (Web Crypto API). Δοκίμασε πρόσφατη έκδοση Chrome ή Safari.";
+      lockBtn.disabled = true;
+      return;
+    }
+    if (hasVault()){
+      lockSub.textContent = "Εισήγαγε τον κωδικό σου";
+      pw2.classList.add("hidden");
+      lockBtn.textContent = "Είσοδος";
+    } else {
+      lockSub.textContent = "Δημιούργησε έναν κωδικό για να προστατέψεις την εφαρμογή";
+      pw2.classList.remove("hidden");
+      lockBtn.textContent = "Δημιουργία κωδικού";
+    }
+  }
+  setupLockUI();
+
+  function shakeErr(msg){
+    lockErr.textContent = msg;
+  }
+  function setLockBusy(busy, label){
+    lockBtn.disabled = busy;
+    if (busy) lockBtn.textContent = label || "Επεξεργασία...";
+  }
+
+  function unlockApp(){
+    appUnlocked = true;
+    lockScreen.classList.add("hidden");
+    appEl.classList.remove("hidden");
+    pw1.value = ""; pw2.value = "";
+    initAppUI();
+  }
+
+  lockBtn.addEventListener("click", function(){
+    if (!cryptoAvailable) return;
+    lockErr.textContent = "";
+    var v1 = pw1.value;
+    if (!v1){ shakeErr("Γράψε έναν κωδικό"); return; }
+
+    if (hasVault()){
+      setLockBusy(true, "Έλεγχος...");
+      var salt = localStorage.getItem(SALT_KEY);
+      var vault = JSON.parse(localStorage.getItem(VAULT_KEY));
+      deriveKey(v1, salt).then(function(key){
+        return decryptObj(key, vault).then(function(data){
+          sessionKey = key;
+          entries = data.entries || [];
+          refDate = data.refDate || DEFAULT_REF;
+          setLockBusy(false, "Είσοδος");
+          unlockApp();
+        });
+      }).catch(function(){
+        setLockBusy(false, "Είσοδος");
+        shakeErr("Λάθος κωδικός");
+        pw1.value = "";
+      });
+    } else {
+      var v2 = pw2.value;
+      if (v1.length < 4){ shakeErr("Ο κωδικός πρέπει να έχει τουλάχιστον 4 χαρακτήρες"); return; }
+      if (v1 !== v2){ shakeErr("Οι κωδικοί δεν ταιριάζουν"); return; }
+      setLockBusy(true, "Δημιουργία...");
+      var newSalt = randomSaltB64();
+      deriveKey(v1, newSalt).then(function(key){
+        entries = []; refDate = DEFAULT_REF;
+        return encryptObj(key, { entries: entries, refDate: refDate }).then(function(payload){
+          localStorage.setItem(SALT_KEY, newSalt);
+          localStorage.setItem(VAULT_KEY, JSON.stringify(payload));
+          sessionKey = key;
+          setLockBusy(false, "Δημιουργία κωδικού");
+          unlockApp();
+        });
+      }).catch(function(){
+        setLockBusy(false, "Δημιουργία κωδικού");
+        shakeErr("Κάτι πήγε στραβά, δοκίμασε ξανά");
+      });
+    }
+  });
+  pw2.addEventListener("keydown", function(e){ if (e.key === "Enter") lockBtn.click(); });
+  pw1.addEventListener("keydown", function(e){
+    if (e.key === "Enter"){
+      if (hasVault()) { lockBtn.click(); } else { pw2.focus(); }
+    }
+  });
+
+  /* ---- Auto re-lock: background / idle ---- */
+  document.addEventListener("visibilitychange", function(){
+    if (document.hidden && appUnlocked){
+      location.reload();
+    }
+  });
+  var idleTimer = null;
+  function resetIdleTimer(){
+    if (!appUnlocked) return;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function(){ location.reload(); }, IDLE_LIMIT_MS);
+  }
+  ["touchstart","mousedown","keydown","scroll"].forEach(function(ev){
+    document.addEventListener(ev, resetIdleTimer, { passive:true });
+  });
+
+  /* ================= App state ================= */
+  var state = {
+    dashMonth: todayStr().slice(0,7),
+    histMonth: todayStr().slice(0,7),
+    entryType: "income"
+  };
+
+  var appInited = false;
+  function initAppUI(){
+    resetIdleTimer();
+    if (appInited) return;
+    appInited = true;
+
+    /* Tabs */
+    var tabButtons = document.querySelectorAll("nav.tabs button");
+    tabButtons.forEach(function(btn){
+      btn.addEventListener("click", function(){
+        tabButtons.forEach(function(b){ b.classList.remove("active"); });
+        btn.classList.add("active");
+        var tab = btn.getAttribute("data-tab");
+        ["dashboard","add","history","charts","settings"].forEach(function(name){
+          $("view-"+name).classList.toggle("hidden", name !== tab);
+        });
+        if (tab === "dashboard") renderDashboard();
+        if (tab === "history") renderHistory();
+        if (tab === "charts") renderCharts();
+        if (tab === "settings") renderBackupMeta();
+      });
+    });
+
+    $("gearBtn").addEventListener("click", function(){
+      tabButtons.forEach(function(b){ b.classList.remove("active"); });
+      document.querySelector('[data-tab="settings"]').classList.add("active");
+      ["dashboard","add","history","charts","settings"].forEach(function(name){
+        $("view-"+name).classList.toggle("hidden", name !== "settings");
+      });
+      renderBackupMeta();
+    });
+
+    /* Month nav - dashboard */
+    $("prevMonth").addEventListener("click", function(){ state.dashMonth = shiftMonth(state.dashMonth,-1); renderDashboard(); });
+    $("nextMonth").addEventListener("click", function(){ state.dashMonth = shiftMonth(state.dashMonth,1); renderDashboard(); });
+    /* Month nav - history */
+    $("prevMonthH").addEventListener("click", function(){ state.histMonth = shiftMonth(state.histMonth,-1); renderHistory(); });
+    $("nextMonthH").addEventListener("click", function(){ state.histMonth = shiftMonth(state.histMonth,1); renderHistory(); });
+
+    /* Add entry form */
+    $("fDate").value = todayStr();
+    function setEntryType(type){
+      state.entryType = type;
+      $("segIncome").classList.toggle("active", type==="income");
+      $("segExpense").classList.toggle("active", type==="expense");
+      var sel = $("fCategory");
+      sel.innerHTML = "";
+      var cats = type==="income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+      cats.forEach(function(c){
+        var opt = document.createElement("option");
+        opt.value = c; opt.textContent = c;
+        sel.appendChild(opt);
+      });
+      var btn = $("submitEntry");
+      btn.classList.remove("income","expense");
+      btn.classList.add(type);
+      btn.textContent = type==="income" ? "Καταχώρηση Εσόδου" : "Καταχώρηση Εξόδου";
+    }
+    $("segIncome").addEventListener("click", function(){ setEntryType("income"); });
+    $("segExpense").addEventListener("click", function(){ setEntryType("expense"); });
+    setEntryType("income");
+
+    $("submitEntry").addEventListener("click", function(){
+      var amount = parseFloat($("fAmount").value);
+      var date = $("fDate").value || todayStr();
+      var category = $("fCategory").value;
+      var note = $("fNote").value.trim();
+      if (!amount || amount<=0){
+        $("fAmount").style.borderColor = "var(--red)";
+        $("fAmount").focus();
+        return;
+      }
+      entries.push({ id: uid(), type: state.entryType, category: category, amount: amount, date: date, note: note });
+      saveVault();
+      $("fAmount").value = "";
+      $("fAmount").style.borderColor = "";
+      $("fNote").value = "";
+      $("fDate").value = todayStr();
+      document.querySelector('[data-tab="dashboard"]').click();
+    });
+
+    /* Settings */
+    $("changePwBtn").addEventListener("click", openChangePwModal);
+    $("changeRefBtn").addEventListener("click", openRefDateModal);
+    $("resetDataBtn").addEventListener("click", openResetModal);
+    $("lockNowBtn").addEventListener("click", function(){ location.reload(); });
+    $("backupExportBtn").addEventListener("click", doExportBackup);
+    $("backupImportBtn").addEventListener("click", function(){ $("importFile").click(); });
+    $("importFile").addEventListener("change", handleImportFile);
+
+    renderBackupMeta();
+    renderDashboard();
+  }
+
+  /* ================= Calculations ================= */
+  function totalsForMonth(ym){
+    var income=0, expense=0;
+    entries.forEach(function(e){
+      if (monthKey(e.date) === ym){
+        if (e.type === "income") income += e.amount; else expense += e.amount;
+      }
+    });
+    return { income: income, expense: expense, net: income-expense };
+  }
+  function cumulativeSince(ref){
+    var income=0, expense=0;
+    entries.forEach(function(e){
+      if (e.date >= ref){
+        if (e.type === "income") income += e.amount; else expense += e.amount;
+      }
+    });
+    return income-expense;
+  }
+  function categoryBreakdown(ym, type){
+    var map = {};
+    entries.forEach(function(e){
+      if (monthKey(e.date)===ym && e.type===type){
+        map[e.category] = (map[e.category]||0) + e.amount;
+      }
+    });
+    var arr = Object.keys(map).map(function(k){ return {category:k, amount:map[k]}; });
+    arr.sort(function(a,b){ return b.amount-a.amount; });
+    return arr;
+  }
+
+  /* ================= Rendering ================= */
+  function renderDashboard(){
+    $("monthLabel").textContent = monthLabel(state.dashMonth);
+    var t = totalsForMonth(state.dashMonth);
+    $("dIncome").textContent = money(t.income);
+    $("dExpense").textContent = money(t.expense);
+    $("dNet").textContent = money(t.net);
+
+    $("cumulSub").textContent = "από " + refDate.split("-").reverse().join("/");
+    $("dCumul").textContent = money(cumulativeSince(refDate));
+
+    var recent = entries.slice().sort(function(a,b){ return b.date.localeCompare(a.date) || 0; }).slice(0,6);
+    var box = $("recentList");
+    if (!recent.length){
+      box.innerHTML = '<div class="emptyMsg">Δεν υπάρχουν καταχωρήσεις ακόμα</div>';
+    } else {
+      box.innerHTML = recent.map(function(e){
+        return '<div class="entryRow"><div class="l"><span class="cat">'+escapeHtml(e.category)+'</span><span class="note">'+e.date.split("-").reverse().join("/")+(e.note? " · "+escapeHtml(e.note):"")+'</span></div><div class="amt '+e.type+'">'+(e.type==="income"?"+":"-")+money(e.amount)+'</div></div>';
+      }).join("");
+    }
+  }
+
+  function renderHistory(){
+    $("monthLabelH").textContent = monthLabel(state.histMonth);
+    var list = entries.filter(function(e){ return monthKey(e.date)===state.histMonth; })
+      .sort(function(a,b){ return b.date.localeCompare(a.date); });
+    var box = $("historyList");
+    if (!list.length){
+      box.innerHTML = '<div class="emptyMsg">Καμία καταχώρηση αυτόν τον μήνα</div>';
+      return;
+    }
+    var byDay = {};
+    list.forEach(function(e){
+      (byDay[e.date] = byDay[e.date] || []).push(e);
+    });
+    var days = Object.keys(byDay).sort().reverse();
+    box.innerHTML = days.map(function(d){
+      var rows = byDay[d].map(function(e){
+        return '<div class="entryRow"><div class="l"><span class="cat">'+escapeHtml(e.category)+'</span>'+(e.note?'<span class="note">'+escapeHtml(e.note)+'</span>':'')+'</div><div style="display:flex;align-items:center;"><div class="amt '+e.type+'">'+(e.type==="income"?"+":"-")+money(e.amount)+'</div><button class="del" data-id="'+e.id+'">✕</button></div></div>';
+      }).join("");
+      return '<div class="dayGroup"><div class="dh">'+d.split("-").reverse().join("/")+'</div>'+rows+'</div>';
+    }).join("");
+    box.querySelectorAll(".del").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var id = btn.getAttribute("data-id");
+        entries = entries.filter(function(e){ return e.id !== id; });
+        saveVault();
+        renderHistory();
+      });
+    });
+  }
+
+  function last6Months(){
+    var arr = [];
+    var ym = todayStr().slice(0,7);
+    for (var i=5;i>=0;i--){ arr.push(shiftMonth(ym,-i)); }
+    return arr;
+  }
+
+  function renderCharts(){
+    var months = last6Months();
+    var data = months.map(function(m){ return { ym:m, t: totalsForMonth(m) }; });
+    var maxVal = Math.max.apply(null, data.map(function(d){ return Math.max(d.t.income, d.t.expense); }).concat([1]));
+    var trend = $("trendChart");
+    trend.innerHTML = data.map(function(d){
+      var ih = Math.round((d.t.income/maxVal)*110);
+      var eh = Math.round((d.t.expense/maxVal)*110);
+      var mn = MONTH_NAMES[parseInt(d.ym.split("-")[1],10)-1].slice(0,3);
+      return '<div class="trendCol"><div class="trendBars">'+
+        '<div class="bar" style="height:'+ih+'px;background:var(--green);"></div>'+
+        '<div class="bar" style="height:'+eh+'px;background:var(--red);"></div>'+
+        '</div><div class="lab">'+mn+'</div></div>';
+    }).join("");
+
+    renderBreakdown("expenseBreakdown", categoryBreakdown(state.dashMonth,"expense"), "var(--red)");
+    renderBreakdown("incomeBreakdown", categoryBreakdown(state.dashMonth,"income"), "var(--green)");
+  }
+
+  function renderBreakdown(elId, arr, color){
+    var box = $(elId);
+    if (!arr.length){ box.innerHTML = '<div class="emptyMsg">Χωρίς δεδομένα</div>'; return; }
+    var max = Math.max.apply(null, arr.map(function(a){return a.amount;}));
+    box.innerHTML = arr.map(function(a){
+      var pct = Math.max(4, Math.round((a.amount/max)*100));
+      return '<div class="barChartRow"><div class="bcl" title="'+escapeHtml(a.category)+'">'+escapeHtml(a.category)+'</div>'+
+        '<div class="bwrap"><div class="bfill" style="width:'+pct+'%;background:'+color+';"></div></div>'+
+        '<div class="bval">'+money(a.amount)+'</div></div>';
+    }).join("");
+  }
+
+  function renderBackupMeta(){
+    var el = $("lastBackupLabel");
+    if (!el) return;
+    var ts = localStorage.getItem(LAST_BACKUP_KEY);
+    if (!ts){ el.textContent = "Δεν έχει γίνει ακόμα αντίγραφο ασφαλείας"; return; }
+    var d = new Date(ts);
+    el.textContent = "Τελευταίο αντίγραφο: " + pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear()+" "+pad(d.getHours())+":"+pad(d.getMinutes());
+  }
+
+  /* ================= Backup export / import ================= */
+  function doExportBackup(){
+    var salt = localStorage.getItem(SALT_KEY);
+    var vault = localStorage.getItem(VAULT_KEY);
+    if (!salt || !vault) return;
+    var payload = { app:"TakisPlan", version:2, salt: salt, vault: JSON.parse(vault) };
+    var blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    var d = new Date();
+    a.href = url;
+    a.download = "takisplan-backup-" + d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate()) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+    localStorage.setItem(LAST_BACKUP_KEY, new Date().toISOString());
+    renderBackupMeta();
+  }
+
+  function handleImportFile(e){
+    var file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var parsed;
+      try{ parsed = JSON.parse(reader.result); }catch(err){
+        alert("Το αρχείο δεν είναι έγκυρο αντίγραφο ασφαλείας Takis Plan.");
+        return;
+      }
+      if (!parsed || !parsed.salt || !parsed.vault){
+        alert("Το αρχείο δεν είναι έγκυρο αντίγραφο ασφαλείας Takis Plan.");
+        return;
+      }
+      openImportModal(parsed);
+    };
+    reader.readAsText(file);
+  }
+
+  function openImportModal(backupData){
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>Επαναφορά αντιγράφου ασφαλείας</h3>'+
+      '<p style="color:var(--muted); font-size:13px;">Θα αντικατασταθούν όλα τα τρέχοντα δεδομένα με αυτά του αντιγράφου. Γράψε τον κωδικό που χρησιμοποιούσες όταν έγινε αυτό το αντίγραφο.</p>'+
+      '<input class="field" id="impPw" type="password" placeholder="Κωδικός αντιγράφου" style="margin-bottom:10px;">'+
+      '<div class="lockErr" id="impErr"></div>'+
+      '<div class="modalActions"><button class="cancel" id="impCancel">Άκυρο</button><button class="confirm danger" id="impConfirm">Επαναφορά</button></div>'+
+      '</div>'
+    );
+    $("impCancel").addEventListener("click", closeModal);
+    $("impConfirm").addEventListener("click", function(){
+      var pw = $("impPw").value;
+      if (!pw){ $("impErr").textContent = "Γράψε τον κωδικό"; return; }
+      $("impConfirm").disabled = true;
+      $("impConfirm").textContent = "Έλεγχος...";
+      deriveKey(pw, backupData.salt).then(function(key){
+        return decryptObj(key, backupData.vault).then(function(data){
+          localStorage.setItem(SALT_KEY, backupData.salt);
+          localStorage.setItem(VAULT_KEY, JSON.stringify(backupData.vault));
+          closeModal();
+          alert("Η επαναφορά ολοκληρώθηκε. Η εφαρμογή θα ξεκλειδώσει ξανά με τον κωδικό του αντιγράφου.");
+          location.reload();
+        });
+      }).catch(function(){
+        $("impConfirm").disabled = false;
+        $("impConfirm").textContent = "Επαναφορά";
+        $("impErr").textContent = "Λάθος κωδικός αντιγράφου";
+      });
+    });
+  }
+
+  /* ================= Modals ================= */
+  function openModal(html){
+    var host = $("modalHost");
+    host.innerHTML = '<div class="modalOverlay" id="modalOverlay">'+html+'</div>';
+    $("modalOverlay").addEventListener("click", function(e){
+      if (e.target.id === "modalOverlay") closeModal();
+    });
+  }
+  function closeModal(){ $("modalHost").innerHTML = ""; }
+
+  function openChangePwModal(){
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>Αλλαγή κωδικού</h3>'+
+      '<input class="field" id="curPw" type="password" placeholder="Τρέχων κωδικός" style="margin-bottom:10px;">'+
+      '<input class="field" id="newPw1" type="password" placeholder="Νέος κωδικός" style="margin-bottom:10px;">'+
+      '<input class="field" id="newPw2" type="password" placeholder="Επιβεβαίωση νέου κωδικού">'+
+      '<div class="lockErr" id="pwModalErr"></div>'+
+      '<div class="modalActions"><button class="cancel" id="pwCancel">Άκυρο</button><button class="confirm" id="pwConfirm">Αποθήκευση</button></div>'+
+      '</div>'
+    );
+    $("pwCancel").addEventListener("click", closeModal);
+    $("pwConfirm").addEventListener("click", function(){
+      var cur = $("curPw").value, n1 = $("newPw1").value, n2 = $("newPw2").value;
+      if (n1.length < 4){ $("pwModalErr").textContent = "Ο νέος κωδικός είναι πολύ μικρός"; return; }
+      if (n1 !== n2){ $("pwModalErr").textContent = "Οι νέοι κωδικοί δεν ταιριάζουν"; return; }
+      $("pwConfirm").disabled = true;
+      $("pwConfirm").textContent = "Έλεγχος...";
+      var oldSalt = localStorage.getItem(SALT_KEY);
+      deriveKey(cur, oldSalt).then(function(oldKey){
+        return decryptObj(oldKey, JSON.parse(localStorage.getItem(VAULT_KEY)));
+      }).then(function(){
+        var newSalt = randomSaltB64();
+        return deriveKey(n1, newSalt).then(function(newKey){
+          return encryptObj(newKey, { entries: entries, refDate: refDate }).then(function(payload){
+            localStorage.setItem(SALT_KEY, newSalt);
+            localStorage.setItem(VAULT_KEY, JSON.stringify(payload));
+            sessionKey = newKey;
+            closeModal();
+          });
+        });
+      }).catch(function(){
+        $("pwConfirm").disabled = false;
+        $("pwConfirm").textContent = "Αποθήκευση";
+        $("pwModalErr").textContent = "Λάθος τρέχων κωδικός";
+      });
+    });
+  }
+
+  function openRefDateModal(){
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>Ημερομηνία έναρξης αποταμίευσης</h3>'+
+      '<input class="field" id="refDateInput" type="date" value="'+refDate+'">'+
+      '<div class="modalActions"><button class="cancel" id="refCancel">Άκυρο</button><button class="confirm" id="refConfirm">Αποθήκευση</button></div>'+
+      '</div>'
+    );
+    $("refCancel").addEventListener("click", closeModal);
+    $("refConfirm").addEventListener("click", function(){
+      refDate = $("refDateInput").value || DEFAULT_REF;
+      saveVault();
+      closeModal();
+      renderDashboard();
+    });
+  }
+
+  function openResetModal(){
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>Διαγραφή όλων των δεδομένων;</h3>'+
+      '<p style="color:var(--muted); font-size:13px;">Αυτή η ενέργεια δεν αναιρείται. Όλες οι καταχωρήσεις εσόδων και εξόδων θα διαγραφούν (ο κωδικός σου παραμένει ίδιος).</p>'+
+      '<div class="modalActions"><button class="cancel" id="resCancel">Άκυρο</button><button class="confirm danger" id="resConfirm">Διαγραφή</button></div>'+
+      '</div>'
+    );
+    $("resCancel").addEventListener("click", closeModal);
+    $("resConfirm").addEventListener("click", function(){
+      entries = [];
+      saveVault();
+      closeModal();
+      renderDashboard();
+    });
+  }
+
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('sw.js').catch(function(err){
+      console.log('SW registration failed', err);
+    });
+  });
+}
+</script>
+</body>
+</html>
