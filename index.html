@@ -458,7 +458,7 @@
         rp: { name: "Takis Plan" },
         user: { id: userId, name: "takisplan-user", displayName: "Takis Plan" },
         pubKeyCredParams: [{alg:-7, type:"public-key"},{alg:-257, type:"public-key"}],
-        authenticatorSelection: { authenticatorAttachment:"platform", userVerification:"required" },
+        authenticatorSelection: { authenticatorAttachment:"platform", userVerification:"required", residentKey:"required", requireResidentKey:true },
         extensions: { prf: { eval: { first: salt } } },
         timeout: 60000
       }
