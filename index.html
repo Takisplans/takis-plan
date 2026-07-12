@@ -1560,7 +1560,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=14').catch(function(err){
       console.log('SW registration failed', err);
     });
   });

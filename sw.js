@@ -1,5 +1,5 @@
 // Bump CACHE_NAME on every release so old caches get cleared and clients pick up new files.
-const CACHE_NAME = 'takisplan-cache-v13';
+const CACHE_NAME = 'takisplan-cache-v14';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -15,10 +15,12 @@ self.addEventListener('activate', (event) => {
 });
 
 // Network-first: always try to get the freshest file when online, fall back to cache when offline.
+// cache:'reload' forces the browser to bypass its own HTTP cache and hit the network directly,
+// so updates show up immediately instead of waiting on GitHub Pages' CDN cache headers.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'reload' })
       .then((res) => {
         const resClone = res.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resClone));
