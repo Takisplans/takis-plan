@@ -672,6 +672,7 @@
     appEl.classList.remove("hidden");
     pw1.value = ""; pw2.value = "";
     initAppUI();
+    processPendingConfirmations();
   }
 
   bioBtn.addEventListener("click", function(){
@@ -964,10 +965,11 @@
         var months = parseInt($("fRecurRange").value, 10) || 12;
         var groupId = uid();
         for (var i=0; i<months; i++){
-          entries.push({ id: uid(), type:"expense", category: category, amount: amount, date: addMonthsToDate(date, i), note: note, recurringId: groupId });
+          var rdate = addMonthsToDate(date, i);
+          entries.push({ id: uid(), type:"expense", category: category, amount: amount, date: rdate, note: note, recurringId: groupId, confirmed: rdate <= todayStr() });
         }
       } else {
-        entries.push({ id: uid(), type: state.entryType, category: category, amount: amount, date: date, note: note });
+        entries.push({ id: uid(), type: state.entryType, category: category, amount: amount, date: date, note: note, confirmed: date <= todayStr() });
       }
       saveVault();
       $("fAmount").value = "";
@@ -1320,7 +1322,7 @@
   }
   function closeModal(){ $("modalHost").innerHTML = ""; }
 
-  function openEditEntryModal(id){
+  function openEditEntryModal(id, onSaved){
     var entry = entries.find(function(e){ return e.id === id; });
     if (!entry) return;
     openModal(
@@ -1382,11 +1384,65 @@
       entry.amount = amount;
       entry.date = date;
       entry.note = note;
+      entry.confirmed = true;
       saveVault();
       closeModal();
       renderHistory();
       renderDashboard();
+      if (onSaved) onSaved();
     });
+  }
+
+  function openConfirmPendingModal(entry, onDone){
+    var typeLabel = entry.type === "income" ? "έσοδο" : "έξοδο";
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>Ισχύει ακόμα αυτή η καταχώρηση;</h3>'+
+      '<p style="color:var(--muted); font-size:13px; margin-bottom:10px;">Είχες προγραμματίσει αυτό το '+typeLabel+' για τις '+entry.date.split("-").reverse().join("/")+'.</p>'+
+      '<div class="entryRow" style="margin-bottom:4px;">'+
+        '<div class="l"><span class="cat">'+escapeHtml(entry.category)+'</span>'+(entry.note?'<span class="note">'+escapeHtml(entry.note)+'</span>':'')+'</div>'+
+        '<div class="amt '+entry.type+'">'+(entry.type==="income"?"+":"-")+money(entry.amount)+'</div>'+
+      '</div>'+
+      '<div class="modalActions">'+
+        '<button class="cancel" id="pendEdit">Επεξεργασία</button>'+
+        '<button class="confirm danger" id="pendNo">Διαγραφή</button>'+
+        '<button class="confirm" id="pendYes">Ισχύει</button>'+
+      '</div>'+
+      '</div>'
+    );
+    $("pendYes").addEventListener("click", function(){
+      entry.confirmed = true;
+      saveVault();
+      closeModal();
+      onDone();
+    });
+    $("pendNo").addEventListener("click", function(){
+      entries = entries.filter(function(e){ return e.id !== entry.id; });
+      saveVault();
+      closeModal();
+      renderHistory();
+      renderDashboard();
+      onDone();
+    });
+    $("pendEdit").addEventListener("click", function(){
+      closeModal();
+      openEditEntryModal(entry.id, onDone);
+    });
+  }
+
+  function processPendingConfirmations(){
+    var changed = false;
+    entries.forEach(function(e){
+      if (typeof e.confirmed === "undefined"){
+        e.confirmed = e.date <= todayStr();
+        changed = true;
+      }
+    });
+    if (changed) saveVault();
+    var pending = entries.filter(function(e){ return e.confirmed === false && e.date <= todayStr(); })
+      .sort(function(a,b){ return a.date.localeCompare(b.date); });
+    if (!pending.length) return;
+    openConfirmPendingModal(pending[0], processPendingConfirmations);
   }
 
   function openFutureCutoffModal(onCancel){
