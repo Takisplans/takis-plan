@@ -340,6 +340,12 @@
         <div class="trendChart" id="trendChart"></div>
       </div>
 
+      <div class="monthNav" id="chartMonthNav">
+        <button id="prevMonthC">‹</button>
+        <div class="label" id="monthLabelC">—</div>
+        <button id="nextMonthC">›</button>
+      </div>
+
       <div class="segControl" id="chartScopeControl" style="margin-bottom:14px;">
         <button type="button" id="chartScopeToday" data-scope="today">Μέχρι σήμερα</button>
         <button type="button" id="chartScopeMonth" data-scope="month" class="active">Όλος ο μήνας</button>
@@ -803,6 +809,7 @@
     histDate: todayStr(),
     histMonth: todayStr().slice(0,7),
     histYear: todayStr().slice(0,4),
+    chartMonth: todayStr().slice(0,7),
     entryType: "income"
   };
 
@@ -847,6 +854,8 @@
         renderCharts();
       });
     });
+    $("prevMonthC").addEventListener("click", function(){ state.chartMonth = shiftMonth(state.chartMonth,-1); renderCharts(); });
+    $("nextMonthC").addEventListener("click", function(){ state.chartMonth = shiftMonth(state.chartMonth,1); renderCharts(); });
     $("includeFutureToggle").addEventListener("change", function(){
       var checked = $("includeFutureToggle").checked;
       localStorage.setItem(INCLUDE_FUTURE_KEY, checked ? "1" : "0");
@@ -1188,16 +1197,18 @@
         '</div><div class="lab">'+mn+'</div></div>';
     }).join("");
 
+    $("monthLabelC").textContent = monthLabel(state.chartMonth);
+
     var chartScope = localStorage.getItem(CHART_SCOPE_KEY) || "month";
     document.querySelectorAll("#chartScopeControl button").forEach(function(b){
       b.classList.toggle("active", b.getAttribute("data-scope")===chartScope);
     });
     var cutoff = chartScope === "today" ? todayStr() : null;
-    var scopeLabel = chartScope === "today" ? "μέχρι σήμερα" : "τρέχων μήνας";
+    var scopeLabel = chartScope === "today" ? "μέχρι σήμερα" : monthLabel(state.chartMonth);
     $("expenseBreakdownTitle").textContent = "Έξοδα ανά κατηγορία (" + scopeLabel + ")";
     $("incomeBreakdownTitle").textContent = "Έσοδα ανά κατηγορία (" + scopeLabel + ")";
-    var expData = categoryBreakdown(state.dashMonth,"expense",cutoff);
-    var incData = categoryBreakdown(state.dashMonth,"income",cutoff);
+    var expData = categoryBreakdown(state.chartMonth,"expense",cutoff);
+    var incData = categoryBreakdown(state.chartMonth,"income",cutoff);
     var expTotal = expData.reduce(function(s,a){ return s+a.amount; }, 0);
     var incTotal = incData.reduce(function(s,a){ return s+a.amount; }, 0);
     $("expenseBreakdownTotal").textContent = "Σύνολο: " + money(expTotal);
