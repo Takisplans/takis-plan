@@ -266,6 +266,22 @@
         <label class="fl">Ημερομηνία</label>
         <input class="field" id="fDate" type="date">
 
+        <div id="recurringRow" style="display:flex; align-items:center; gap:8px; margin:16px 0 0;">
+          <input type="checkbox" id="fRecurring" style="width:18px;height:18px;flex-shrink:0;">
+          <label for="fRecurring" style="font-size:13px; color:var(--muted); margin:0;">🔁 Επαναλαμβανόμενο κάθε μήνα</label>
+        </div>
+        <div id="recurringOptions" class="hidden">
+          <label class="fl">Εύρος επανάληψης</label>
+          <select class="field" id="fRecurRange">
+            <option value="3">3 μήνες</option>
+            <option value="6">6 μήνες</option>
+            <option value="12" selected>12 μήνες (1 έτος)</option>
+            <option value="24">24 μήνες (2 έτη)</option>
+            <option value="36">36 μήνες (3 έτη)</option>
+          </select>
+          <div class="secNote" style="margin-top:6px;">Θα δημιουργηθούν αυτόματα καταχωρήσεις για κάθε μήνα, ξεκινώντας από την παραπάνω ημερομηνία.</div>
+        </div>
+
         <label class="fl">Σημείωση (προαιρετικό)</label>
         <input class="field" id="fNote" type="text" placeholder="π.χ. Μισθός Ιουλίου">
 
@@ -792,10 +808,32 @@
       btn.classList.remove("income","expense");
       btn.classList.add(type);
       btn.textContent = type==="income" ? "Καταχώρηση Εσόδου" : "Καταχώρηση Εξόδου";
+
+      if (type === "expense"){
+        $("recurringRow").classList.remove("hidden");
+      } else {
+        $("recurringRow").classList.add("hidden");
+        $("fRecurring").checked = false;
+        $("recurringOptions").classList.add("hidden");
+      }
     }
     $("segIncome").addEventListener("click", function(){ setEntryType("income"); });
     $("segExpense").addEventListener("click", function(){ setEntryType("expense"); });
+    $("fRecurring").addEventListener("change", function(){
+      $("recurringOptions").classList.toggle("hidden", !$("fRecurring").checked);
+    });
     setEntryType("income");
+
+    function lastDayOfMonth(y, m){ return new Date(y, m, 0).getDate(); } // m is 1-indexed
+    function addMonthsToDate(dateStr, offset){
+      var parts = dateStr.split("-");
+      var y = parseInt(parts[0],10), m = parseInt(parts[1],10), d = parseInt(parts[2],10);
+      m += offset;
+      while(m>12){ m-=12; y++; }
+      while(m<1){ m+=12; y--; }
+      d = Math.min(d, lastDayOfMonth(y,m));
+      return y+"-"+pad(m)+"-"+pad(d);
+    }
 
     $("submitEntry").addEventListener("click", function(){
       var amount = parseFloat($("fAmount").value);
@@ -807,12 +845,23 @@
         $("fAmount").focus();
         return;
       }
-      entries.push({ id: uid(), type: state.entryType, category: category, amount: amount, date: date, note: note });
+      var isRecurring = state.entryType === "expense" && $("fRecurring").checked;
+      if (isRecurring){
+        var months = parseInt($("fRecurRange").value, 10) || 12;
+        var groupId = uid();
+        for (var i=0; i<months; i++){
+          entries.push({ id: uid(), type:"expense", category: category, amount: amount, date: addMonthsToDate(date, i), note: note, recurringId: groupId });
+        }
+      } else {
+        entries.push({ id: uid(), type: state.entryType, category: category, amount: amount, date: date, note: note });
+      }
       saveVault();
       $("fAmount").value = "";
       $("fAmount").style.borderColor = "";
       $("fNote").value = "";
       $("fDate").value = todayStr();
+      $("fRecurring").checked = false;
+      $("recurringOptions").classList.add("hidden");
       document.querySelector('[data-tab="dashboard"]').click();
     });
 
