@@ -117,6 +117,7 @@
   }
   .segControl button.active.income{background:var(--green); color:#fff;}
   .segControl button.active.expense{background:var(--red); color:#fff;}
+  .segControl button.active{background:var(--navy); color:#fff;}
 
   label.fl{display:block; font-size:13px; color:var(--muted); margin:12px 0 6px;}
   .field{
@@ -296,11 +297,35 @@
 
     <!-- History -->
     <section id="view-history" class="hidden">
-      <div class="monthNav">
+      <div class="segControl" id="histModeControl">
+        <button type="button" id="histModeDay" data-mode="day">Ημέρα</button>
+        <button type="button" id="histModeMonth" data-mode="month" class="active">Μήνας</button>
+        <button type="button" id="histModeYear" data-mode="year">Έτος</button>
+      </div>
+
+      <div class="monthNav hidden" id="histNavDay">
+        <button id="prevDayH">‹</button>
+        <input class="field" id="histDateInput" type="date" style="text-align:center; font-weight:700; flex:1; margin:0 10px;">
+        <button id="nextDayH">›</button>
+      </div>
+
+      <div class="monthNav" id="histNavMonth">
         <button id="prevMonthH">‹</button>
         <div class="label" id="monthLabelH">—</div>
         <button id="nextMonthH">›</button>
       </div>
+
+      <div class="monthNav hidden" id="histNavYear">
+        <button id="prevYearH">‹</button>
+        <div class="label" id="yearLabelH">—</div>
+        <button id="nextYearH">›</button>
+      </div>
+
+      <div class="statRow">
+        <div class="stat income"><div class="v" id="histIncome">0,00 €</div><div class="l">Έσοδα</div></div>
+        <div class="stat expense"><div class="v" id="histExpense">0,00 €</div><div class="l">Έξοδα</div></div>
+      </div>
+
       <div id="historyList"></div>
     </section>
 
@@ -413,6 +438,12 @@
     while(m>12){ m-=12; y++; }
     while(m<1){ m+=12; y--; }
     return y+"-"+pad(m);
+  }
+  function shiftDate(dateStr, deltaDays){
+    var parts = dateStr.split("-");
+    var d = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+    d.setDate(d.getDate()+deltaDays);
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
   }
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
   function escapeHtml(s){
@@ -759,7 +790,10 @@
   /* ================= App state ================= */
   var state = {
     dashMonth: todayStr().slice(0,7),
+    histMode: "month",
+    histDate: todayStr(),
     histMonth: todayStr().slice(0,7),
+    histYear: todayStr().slice(0,4),
     entryType: "income"
   };
 
@@ -814,9 +848,47 @@
     $("futureCutoffLabel").addEventListener("click", function(){
       openFutureCutoffModal();
     });
+    /* History mode + nav */
+    var histModeBtns = document.querySelectorAll("#histModeControl button");
+    function updateHistNavVisibility(){
+      $("histNavDay").classList.toggle("hidden", state.histMode !== "day");
+      $("histNavMonth").classList.toggle("hidden", state.histMode !== "month");
+      $("histNavYear").classList.toggle("hidden", state.histMode !== "year");
+    }
+    function setHistMode(mode){
+      state.histMode = mode;
+      histModeBtns.forEach(function(b){ b.classList.toggle("active", b.getAttribute("data-mode")===mode); });
+      updateHistNavVisibility();
+      renderHistory();
+    }
+    histModeBtns.forEach(function(b){
+      b.addEventListener("click", function(){ setHistMode(b.getAttribute("data-mode")); });
+    });
+    updateHistNavVisibility();
+
+    $("histDateInput").value = state.histDate;
+    $("histDateInput").addEventListener("change", function(){
+      state.histDate = $("histDateInput").value || todayStr();
+      renderHistory();
+    });
+    $("prevDayH").addEventListener("click", function(){
+      state.histDate = shiftDate(state.histDate,-1);
+      $("histDateInput").value = state.histDate;
+      renderHistory();
+    });
+    $("nextDayH").addEventListener("click", function(){
+      state.histDate = shiftDate(state.histDate,1);
+      $("histDateInput").value = state.histDate;
+      renderHistory();
+    });
+
     /* Month nav - history */
     $("prevMonthH").addEventListener("click", function(){ state.histMonth = shiftMonth(state.histMonth,-1); renderHistory(); });
     $("nextMonthH").addEventListener("click", function(){ state.histMonth = shiftMonth(state.histMonth,1); renderHistory(); });
+
+    /* Year nav - history */
+    $("prevYearH").addEventListener("click", function(){ state.histYear = ""+(parseInt(state.histYear,10)-1); renderHistory(); });
+    $("nextYearH").addEventListener("click", function(){ state.histYear = ""+(parseInt(state.histYear,10)+1); renderHistory(); });
 
     /* Add entry form */
     $("fDate").value = todayStr();
@@ -1027,12 +1099,29 @@
   }
 
   function renderHistory(){
-    $("monthLabelH").textContent = monthLabel(state.histMonth);
-    var list = entries.filter(function(e){ return monthKey(e.date)===state.histMonth; })
-      .sort(function(a,b){ return b.date.localeCompare(a.date); });
+    var list, emptyMsg;
+    if (state.histMode === "day"){
+      list = entries.filter(function(e){ return e.date === state.histDate; });
+      emptyMsg = "Καμία καταχώρηση αυτή την ημέρα";
+    } else if (state.histMode === "year"){
+      $("yearLabelH").textContent = state.histYear;
+      list = entries.filter(function(e){ return e.date.slice(0,4) === state.histYear; });
+      emptyMsg = "Καμία καταχώρηση αυτό το έτος";
+    } else {
+      $("monthLabelH").textContent = monthLabel(state.histMonth);
+      list = entries.filter(function(e){ return monthKey(e.date)===state.histMonth; });
+      emptyMsg = "Καμία καταχώρηση αυτόν τον μήνα";
+    }
+    list = list.slice().sort(function(a,b){ return b.date.localeCompare(a.date); });
+
+    var histIncome=0, histExpense=0;
+    list.forEach(function(e){ if (e.type==="income") histIncome+=e.amount; else histExpense+=e.amount; });
+    $("histIncome").textContent = money(histIncome);
+    $("histExpense").textContent = money(histExpense);
+
     var box = $("historyList");
     if (!list.length){
-      box.innerHTML = '<div class="emptyMsg">Καμία καταχώρηση αυτόν τον μήνα</div>';
+      box.innerHTML = '<div class="emptyMsg">'+emptyMsg+'</div>';
       return;
     }
     var byDay = {};
