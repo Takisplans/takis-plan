@@ -241,6 +241,10 @@
           <div class="v" id="dCumul">0,00 €</div>
           <div class="l" id="cumulSub">από 01/07/2026</div>
         </div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-size:13px; color:var(--muted);">
+          <input type="checkbox" id="includeFutureToggle" style="width:16px;height:16px;flex-shrink:0;">
+          Συμπερίληψη μελλοντικών καταχωρήσεων (προεπισκόπηση)
+        </label>
       </div>
 
       <div class="card">
@@ -376,6 +380,7 @@
   var BIOCRED_KEY = "tp_biocred_v3";
   var VAULT_KEY = "tp_vault_v2";
   var LAST_BACKUP_KEY = "tp_lastbackup_v2";
+  var INCLUDE_FUTURE_KEY = "tp_include_future_v1";
   var DEFAULT_REF = "2026-07-01";
   var IDLE_LIMIT_MS = 5 * 60 * 1000;
   var PRF_INFO = "TakisPlanBiometricUnlockV1";
@@ -394,6 +399,11 @@
   function monthLabel(ym){
     var parts = ym.split("-"); var y = parts[0], m = parseInt(parts[1],10);
     return MONTH_NAMES[m-1] + " " + y;
+  }
+  function endOfMonthStr(ym){
+    var parts = ym.split("-"); var y = parseInt(parts[0],10), m = parseInt(parts[1],10);
+    var last = new Date(y, m, 0).getDate();
+    return y+"-"+pad(m)+"-"+pad(last);
   }
   function shiftMonth(ym, delta){
     var parts = ym.split("-"); var y = parseInt(parts[0],10), m = parseInt(parts[1],10);
@@ -786,6 +796,10 @@
     /* Month nav - dashboard */
     $("prevMonth").addEventListener("click", function(){ state.dashMonth = shiftMonth(state.dashMonth,-1); renderDashboard(); });
     $("nextMonth").addEventListener("click", function(){ state.dashMonth = shiftMonth(state.dashMonth,1); renderDashboard(); });
+    $("includeFutureToggle").addEventListener("change", function(){
+      localStorage.setItem(INCLUDE_FUTURE_KEY, $("includeFutureToggle").checked ? "1" : "0");
+      renderDashboard();
+    });
     /* Month nav - history */
     $("prevMonthH").addEventListener("click", function(){ state.histMonth = shiftMonth(state.histMonth,-1); renderHistory(); });
     $("nextMonthH").addEventListener("click", function(){ state.histMonth = shiftMonth(state.histMonth,1); renderHistory(); });
@@ -936,10 +950,11 @@
     });
     return { income: income, expense: expense, net: income-expense };
   }
-  function cumulativeSince(ref){
+  function cumulativeSince(ref, includeFuture){
+    var cutoff = includeFuture ? null : endOfMonthStr(todayStr().slice(0,7));
     var income=0, expense=0;
     entries.forEach(function(e){
-      if (e.date >= ref){
+      if (e.date >= ref && (includeFuture || e.date <= cutoff)){
         if (e.type === "income") income += e.amount; else expense += e.amount;
       }
     });
@@ -965,8 +980,10 @@
     $("dExpense").textContent = money(t.expense);
     $("dNet").textContent = money(t.net);
 
-    $("cumulSub").textContent = "από " + refDate.split("-").reverse().join("/");
-    $("dCumul").textContent = money(cumulativeSince(refDate));
+    var includeFuture = localStorage.getItem(INCLUDE_FUTURE_KEY) === "1";
+    $("includeFutureToggle").checked = includeFuture;
+    $("cumulSub").textContent = "από " + refDate.split("-").reverse().join("/") + (includeFuture ? " (με μελλοντικές καταχωρήσεις)" : " (έως τέλος τρέχοντος μήνα)");
+    $("dCumul").textContent = money(cumulativeSince(refDate, includeFuture));
 
     var recent = entries.slice().sort(function(a,b){ return b.date.localeCompare(a.date) || 0; }).slice(0,6);
     var box = $("recentList");
