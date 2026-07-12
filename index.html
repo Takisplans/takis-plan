@@ -245,6 +245,7 @@
           <input type="checkbox" id="includeFutureToggle" style="width:16px;height:16px;flex-shrink:0;">
           Συμπερίληψη μελλοντικών καταχωρήσεων (προεπισκόπηση)
         </label>
+        <button type="button" id="futureCutoffLabel" class="hidden linkBtn" style="width:auto; text-decoration:underline; font-size:12px; padding:6px 0 0; margin:0;">Έως: —</button>
       </div>
 
       <div class="card">
@@ -381,6 +382,7 @@
   var VAULT_KEY = "tp_vault_v2";
   var LAST_BACKUP_KEY = "tp_lastbackup_v2";
   var INCLUDE_FUTURE_KEY = "tp_include_future_v1";
+  var FUTURE_CUTOFF_KEY = "tp_future_cutoff_v1";
   var DEFAULT_REF = "2026-07-01";
   var IDLE_LIMIT_MS = 5 * 60 * 1000;
   var PRF_INFO = "TakisPlanBiometricUnlockV1";
@@ -797,8 +799,20 @@
     $("prevMonth").addEventListener("click", function(){ state.dashMonth = shiftMonth(state.dashMonth,-1); renderDashboard(); });
     $("nextMonth").addEventListener("click", function(){ state.dashMonth = shiftMonth(state.dashMonth,1); renderDashboard(); });
     $("includeFutureToggle").addEventListener("change", function(){
-      localStorage.setItem(INCLUDE_FUTURE_KEY, $("includeFutureToggle").checked ? "1" : "0");
-      renderDashboard();
+      var checked = $("includeFutureToggle").checked;
+      localStorage.setItem(INCLUDE_FUTURE_KEY, checked ? "1" : "0");
+      if (checked){
+        openFutureCutoffModal(function(){
+          $("includeFutureToggle").checked = false;
+          localStorage.setItem(INCLUDE_FUTURE_KEY, "0");
+          renderDashboard();
+        });
+      } else {
+        renderDashboard();
+      }
+    });
+    $("futureCutoffLabel").addEventListener("click", function(){
+      openFutureCutoffModal();
     });
     /* Month nav - history */
     $("prevMonthH").addEventListener("click", function(){ state.histMonth = shiftMonth(state.histMonth,-1); renderHistory(); });
@@ -950,11 +964,18 @@
     });
     return { income: income, expense: expense, net: income-expense };
   }
-  function cumulativeSince(ref, includeFuture){
-    var cutoff = includeFuture ? null : endOfMonthStr(todayStr().slice(0,7));
+  function cumulativeSince(ref, includeFuture, cutoffMonth){
+    var cutoff;
+    if (!includeFuture){
+      cutoff = endOfMonthStr(todayStr().slice(0,7));
+    } else if (cutoffMonth){
+      cutoff = endOfMonthStr(cutoffMonth);
+    } else {
+      cutoff = null;
+    }
     var income=0, expense=0;
     entries.forEach(function(e){
-      if (e.date >= ref && (includeFuture || e.date <= cutoff)){
+      if (e.date >= ref && (!cutoff || e.date <= cutoff)){
         if (e.type === "income") income += e.amount; else expense += e.amount;
       }
     });
@@ -981,9 +1002,18 @@
     $("dNet").textContent = money(t.net);
 
     var includeFuture = localStorage.getItem(INCLUDE_FUTURE_KEY) === "1";
+    var cutoffMonth = localStorage.getItem(FUTURE_CUTOFF_KEY);
     $("includeFutureToggle").checked = includeFuture;
-    $("cumulSub").textContent = "από " + refDate.split("-").reverse().join("/") + (includeFuture ? " (με μελλοντικές καταχωρήσεις)" : " (έως τέλος τρέχοντος μήνα)");
-    $("dCumul").textContent = money(cumulativeSince(refDate, includeFuture));
+    var cutoffBtn = $("futureCutoffLabel");
+    if (includeFuture && cutoffMonth){
+      cutoffBtn.textContent = "Έως: " + monthLabel(cutoffMonth) + " (αλλαγή)";
+      cutoffBtn.classList.remove("hidden");
+    } else {
+      cutoffBtn.classList.add("hidden");
+    }
+    $("cumulSub").textContent = "από " + refDate.split("-").reverse().join("/") +
+      (includeFuture ? (cutoffMonth ? " έως τέλος " + monthLabel(cutoffMonth) : " (όλες οι μελλοντικές)") : " (έως τέλος τρέχοντος μήνα)");
+    $("dCumul").textContent = money(cumulativeSince(refDate, includeFuture, cutoffMonth));
 
     var recent = entries.slice().sort(function(a,b){ return b.date.localeCompare(a.date) || 0; }).slice(0,6);
     var box = $("recentList");
@@ -1238,6 +1268,30 @@
       saveVault();
       closeModal();
       renderHistory();
+      renderDashboard();
+    });
+  }
+
+  function openFutureCutoffModal(onCancel){
+    var stored = localStorage.getItem(FUTURE_CUTOFF_KEY);
+    var defaultVal = stored || todayStr().slice(0,7);
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>Προεπισκόπηση έως ποιον μήνα;</h3>'+
+      '<label class="fl">Μήνας</label>'+
+      '<input class="field" id="futureCutoffInput" type="month" value="'+defaultVal+'">'+
+      '<div class="modalActions"><button class="cancel" id="futCancel">Άκυρο</button><button class="confirm" id="futConfirm">Εφαρμογή</button></div>'+
+      '</div>'
+    );
+    $("futCancel").addEventListener("click", function(){
+      closeModal();
+      if (onCancel) onCancel();
+    });
+    $("futConfirm").addEventListener("click", function(){
+      var val = $("futureCutoffInput").value;
+      if (!val) return;
+      localStorage.setItem(FUTURE_CUTOFF_KEY, val);
+      closeModal();
       renderDashboard();
     });
   }
