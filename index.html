@@ -11,7 +11,6 @@
 <meta name="apple-mobile-web-app-title" content="Takis Plan">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
-
 <style>
   :root{
     --navy:#12213f; --navy2:#1a2c52; --green:#2e7d32; --green-l:#e8f5e9;
@@ -51,6 +50,7 @@
   }
   .lockBtn:active{opacity:.85;}
   .lockBtn:disabled{opacity:.6;}
+  .bioBtn{background:var(--accent); margin-top:10px;}
   .lockErr{color:var(--red); font-size:13px; min-height:18px; margin-top:8px;}
   .lockHint{color:var(--muted); font-size:12px; margin-top:18px; line-height:1.4;}
 
@@ -166,7 +166,7 @@
     padding:14px; margin-bottom:10px; font-size:14px; font-weight:600; color:var(--text);
   }
   .settingsBtn.danger{color:var(--red);}
-  .secNote{font-size:13px; color:var(--muted); line-height:1.55; margin:0;}
+  .secNote{font-size:13px; color:var(--muted); line-height:1.55; margin:0 0 12px;}
   .backupMeta{font-size:12px; color:var(--muted); margin:-2px 0 14px 4px;}
   .modalOverlay{
     position:fixed; inset:0; background:rgba(10,15,30,.5); display:flex; align-items:center; justify-content:center;
@@ -193,8 +193,9 @@
     <input type="password" id="pw1" placeholder="Κωδικός" inputmode="text">
     <input type="password" id="pw2" placeholder="Επιβεβαίωση κωδικού" class="hidden">
     <button class="lockBtn" id="lockBtn">Δημιουργία κωδικού</button>
+    <button class="lockBtn bioBtn hidden" id="bioBtn">👆 Βιομετρικό Unlock</button>
     <div class="lockErr" id="lockErr"></div>
-    <div class="lockHint">Τα δεδομένα σου κρυπτογραφούνται (AES-256) με κλειδί που παράγεται από τον κωδικό σου και μένουν μόνο στη συσκευή σου.</div>
+    <div class="lockHint">Τα δεδομένα σου κρυπτογραφούνται (AES-256) με κλειδί που παράγεται από τον κωδικό ή το βιομετρικό σου και μένουν μόνο στη συσκευή σου.</div>
   </div>
 </div>
 
@@ -298,7 +299,14 @@
     <section id="view-settings" class="hidden">
       <div class="card">
         <h2>🔐 Ασφάλεια</h2>
-        <p class="secNote">Όλα τα δεδομένα σου (έσοδα, έξοδα, αντίγραφα ασφαλείας) κρυπτογραφούνται με AES-256 χρησιμοποιώντας κλειδί που παράγεται από τον κωδικό σου (PBKDF2, 200.000 επαναλήψεις). Χωρίς τον σωστό κωδικό, κανείς δεν μπορεί να διαβάσει τα δεδομένα — ούτε από τη μνήμη του κινητού, ούτε από αρχείο backup που τυχόν σταλεί/αποθηκευτεί αλλού. Η εφαρμογή κλειδώνει αυτόματα όταν αλλάζεις εφαρμογή/οθόνη ή μετά από 5 λεπτά αδράνειας.</p>
+        <p class="secNote">Όλα τα δεδομένα σου (έσοδα, έξοδα, αντίγραφα ασφαλείας) κρυπτογραφούνται με AES-256 μέσω ενός κλειδιού που προστατεύεται είτε από τον κωδικό σου είτε από το βιομετρικό σου. Χωρίς αυτά, κανείς δεν μπορεί να διαβάσει τα δεδομένα. Η εφαρμογή κλειδώνει αυτόματα όταν αλλάζεις εφαρμογή/οθόνη ή μετά από 5 λεπτά αδράνειας.</p>
+      </div>
+
+      <div class="card">
+        <h2>👆 Βιομετρικό Unlock</h2>
+        <p class="secNote" id="bioStatusText">Έλεγχος υποστήριξης συσκευής...</p>
+        <button class="settingsBtn hidden" id="bioEnableBtn">👆 Ενεργοποίηση Βιομετρικού Unlock</button>
+        <button class="settingsBtn danger hidden" id="bioDisableBtn">🚫 Απενεργοποίηση Βιομετρικού Unlock</button>
       </div>
 
       <div class="card">
@@ -337,10 +345,14 @@
   /* ================= Helpers ================= */
   var $ = function(id){ return document.getElementById(id); };
   var SALT_KEY = "tp_salt_v2";
+  var PWWRAP_KEY = "tp_pwwrap_v3";
+  var BIOWRAP_KEY = "tp_biowrap_v3";
+  var BIOCRED_KEY = "tp_biocred_v3";
   var VAULT_KEY = "tp_vault_v2";
   var LAST_BACKUP_KEY = "tp_lastbackup_v2";
   var DEFAULT_REF = "2026-07-01";
   var IDLE_LIMIT_MS = 5 * 60 * 1000;
+  var PRF_INFO = "TakisPlanBiometricUnlockV1";
 
   function money(n){
     n = Number(n)||0;
@@ -374,7 +386,7 @@
   var INCOME_CATEGORIES = ["Μισθός","Δώρο Πάσχα","Δώρο Χριστουγέννων","Επίδομα Αδείας","Bonus","Έσοδα από Τυχερά Παιχνίδια","Έσοδα από 2η Εργασία","Άλλο Έσοδο"];
   var EXPENSE_CATEGORIES = ["Ενοίκιο Σπίτι","ΔΕΗ Ρεύμα","ΔΕΗ Internet","Cosmote TV","Ασφάλεια Γιώργου","Ασφάλεια Αυτοκινήτου","Δάνειο από Εργοδότη","Διατροφή Διαζυγίου","Βενζίνη Αυτοκινήτου","Διόδια","Supermarket","Οικιακές Συνεργασίες","Πετρέλαιο Θέρμανσης","Φαγητό από Έξω","Καπνικά","Συνδρομές σε apps","Έκτακτα Έξοδα","Μετακίνηση (Μετρό κτλ)","Ταξί","VODAFONE","Διακοπές/Ενοικίαση","Εφορία","ΕΦΚΑ","Διασκέδαση","Άλλο Έξοδο"];
 
-  /* ================= Crypto layer (AES-256-GCM, key derived via PBKDF2) ================= */
+  /* ================= Crypto layer (AES-256-GCM, key derived via PBKDF2 / WebAuthn PRF) ================= */
   function bytesToBase64(bytes){
     var bin = "";
     for (var i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
@@ -389,6 +401,9 @@
   function randomSaltB64(){
     return bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
   }
+  function randomMkBytes(){
+    return crypto.getRandomValues(new Uint8Array(32));
+  }
   function deriveKey(password, saltB64){
     var enc = new TextEncoder();
     var salt = base64ToBytes(saltB64);
@@ -402,6 +417,9 @@
           ["encrypt","decrypt"]
         );
       });
+  }
+  function importMk(mkBytes){
+    return crypto.subtle.importKey("raw", mkBytes, "AES-GCM", false, ["encrypt","decrypt"]);
   }
   function encryptObj(key, obj){
     var iv = crypto.getRandomValues(new Uint8Array(12));
@@ -420,14 +438,87 @@
   }
   var cryptoAvailable = !!(window.crypto && window.crypto.subtle);
 
+  async function getPrfSalt(){
+    var enc = new TextEncoder().encode(PRF_INFO);
+    var hash = await crypto.subtle.digest("SHA-256", enc);
+    return new Uint8Array(hash);
+  }
+  async function biometricPlatformAvailable(){
+    if (!window.PublicKeyCredential || !PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) return false;
+    try { return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
+    catch(e){ return false; }
+  }
+  async function registerBiometric(mkBytes){
+    var salt = await getPrfSalt();
+    var challenge = crypto.getRandomValues(new Uint8Array(32));
+    var userId = crypto.getRandomValues(new Uint8Array(16));
+    var cred = await navigator.credentials.create({
+      publicKey: {
+        challenge: challenge,
+        rp: { name: "Takis Plan" },
+        user: { id: userId, name: "takisplan-user", displayName: "Takis Plan" },
+        pubKeyCredParams: [{alg:-7, type:"public-key"},{alg:-257, type:"public-key"}],
+        authenticatorSelection: { authenticatorAttachment:"platform", userVerification:"required" },
+        extensions: { prf: { eval: { first: salt } } },
+        timeout: 60000
+      }
+    });
+    if (!cred) throw new Error("no-credential");
+
+    var assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ id: cred.rawId, type:"public-key" }],
+        userVerification: "required",
+        extensions: { prf: { eval: { first: salt } } },
+        timeout: 60000
+      }
+    });
+    var ext = assertion.getClientExtensionResults();
+    var prfResult = ext && ext.prf && ext.prf.results && ext.prf.results.first;
+    if (!prfResult) throw new Error("prf-unsupported");
+
+    var bioKey = await crypto.subtle.importKey("raw", prfResult, "AES-GCM", false, ["encrypt","decrypt"]);
+    var wrapped = await encryptObj(bioKey, { mk: bytesToBase64(mkBytes) });
+    localStorage.setItem(BIOWRAP_KEY, JSON.stringify(wrapped));
+    localStorage.setItem(BIOCRED_KEY, bytesToBase64(new Uint8Array(cred.rawId)));
+  }
+  async function unlockWithBiometric(){
+    var credIdB64 = localStorage.getItem(BIOCRED_KEY);
+    if (!credIdB64) throw new Error("no-biometric");
+    var salt = await getPrfSalt();
+    var credId = base64ToBytes(credIdB64);
+    var assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ id: credId.buffer, type:"public-key" }],
+        userVerification: "required",
+        extensions: { prf: { eval: { first: salt } } },
+        timeout: 60000
+      }
+    });
+    var ext = assertion.getClientExtensionResults();
+    var prfResult = ext && ext.prf && ext.prf.results && ext.prf.results.first;
+    if (!prfResult) throw new Error("prf-unavailable");
+    var bioKey = await crypto.subtle.importKey("raw", prfResult, "AES-GCM", false, ["encrypt","decrypt"]);
+    var wrapped = JSON.parse(localStorage.getItem(BIOWRAP_KEY));
+    var unwrapped = await decryptObj(bioKey, wrapped);
+    var mkBytes = base64ToBytes(unwrapped.mk);
+    return { mk: await importMk(mkBytes), mkBytes: mkBytes };
+  }
+
   /* ================= Vault state ================= */
-  var sessionKey = null;      // CryptoKey, only in memory while unlocked
+  var sessionKey = null;      // MK CryptoKey, only in memory while unlocked
+  var mkRawBytes = null;      // raw MK bytes, kept in memory only while unlocked (needed to enable biometrics later)
   var entries = [];
   var refDate = DEFAULT_REF;
   var appUnlocked = false;
 
   function hasVault(){
     return !!(localStorage.getItem(SALT_KEY) && localStorage.getItem(VAULT_KEY));
+  }
+  function hasBiometric(){
+    return !!(localStorage.getItem(BIOWRAP_KEY) && localStorage.getItem(BIOCRED_KEY));
   }
   function saveVault(){
     if (!sessionKey) return Promise.resolve();
@@ -438,7 +529,7 @@
 
   /* ================= Lock screen ================= */
   var lockScreen = $("lockScreen"), appEl = $("app");
-  var pw1 = $("pw1"), pw2 = $("pw2"), lockBtn = $("lockBtn"), lockErr = $("lockErr"), lockSub = $("lockSub");
+  var pw1 = $("pw1"), pw2 = $("pw2"), lockBtn = $("lockBtn"), lockErr = $("lockErr"), lockSub = $("lockSub"), bioBtn = $("bioBtn");
 
   function setupLockUI(){
     if (!cryptoAvailable){
@@ -450,6 +541,7 @@
       lockSub.textContent = "Εισήγαγε τον κωδικό σου";
       pw2.classList.add("hidden");
       lockBtn.textContent = "Είσοδος";
+      if (hasBiometric()) bioBtn.classList.remove("hidden");
     } else {
       lockSub.textContent = "Δημιούργησε έναν κωδικό για να προστατέψεις την εφαρμογή";
       pw2.classList.remove("hidden");
@@ -474,6 +566,28 @@
     initAppUI();
   }
 
+  bioBtn.addEventListener("click", function(){
+    lockErr.textContent = "";
+    bioBtn.disabled = true;
+    bioBtn.textContent = "Έλεγχος βιομετρικού...";
+    unlockWithBiometric().then(function(res){
+      sessionKey = res.mk;
+      mkRawBytes = res.mkBytes;
+      var vaultPayload = JSON.parse(localStorage.getItem(VAULT_KEY));
+      return decryptObj(sessionKey, vaultPayload).then(function(data){
+        entries = data.entries || [];
+        refDate = data.refDate || DEFAULT_REF;
+        bioBtn.disabled = false;
+        bioBtn.textContent = "👆 Βιομετρικό Unlock";
+        unlockApp();
+      });
+    }).catch(function(){
+      bioBtn.disabled = false;
+      bioBtn.textContent = "👆 Βιομετρικό Unlock";
+      shakeErr("Το βιομετρικό απέτυχε — δοκίμασε τον κωδικό σου.");
+    });
+  });
+
   lockBtn.addEventListener("click", function(){
     if (!cryptoAvailable) return;
     lockErr.textContent = "";
@@ -483,15 +597,40 @@
     if (hasVault()){
       setLockBusy(true, "Έλεγχος...");
       var salt = localStorage.getItem(SALT_KEY);
-      var vault = JSON.parse(localStorage.getItem(VAULT_KEY));
-      deriveKey(v1, salt).then(function(key){
-        return decryptObj(key, vault).then(function(data){
-          sessionKey = key;
-          entries = data.entries || [];
-          refDate = data.refDate || DEFAULT_REF;
-          setLockBusy(false, "Είσοδος");
-          unlockApp();
-        });
+      deriveKey(v1, salt).then(function(pwKey){
+        var hasNew = !!localStorage.getItem(PWWRAP_KEY);
+        if (hasNew){
+          var pwWrap = JSON.parse(localStorage.getItem(PWWRAP_KEY));
+          return decryptObj(pwKey, pwWrap).then(function(obj){
+            var mkBytes = base64ToBytes(obj.mk);
+            return importMk(mkBytes).then(function(mk){
+              var vaultPayload = JSON.parse(localStorage.getItem(VAULT_KEY));
+              return decryptObj(mk, vaultPayload).then(function(data){
+                sessionKey = mk; mkRawBytes = mkBytes;
+                entries = data.entries || []; refDate = data.refDate || DEFAULT_REF;
+              });
+            });
+          });
+        } else {
+          // legacy vault (encrypted directly with password key) -> migrate to MK scheme
+          var legacyVault = JSON.parse(localStorage.getItem(VAULT_KEY));
+          return decryptObj(pwKey, legacyVault).then(function(data){
+            entries = data.entries || []; refDate = data.refDate || DEFAULT_REF;
+            var mkBytes = randomMkBytes();
+            return importMk(mkBytes).then(function(mk){
+              return encryptObj(pwKey, { mk: bytesToBase64(mkBytes) }).then(function(pwWrap){
+                return encryptObj(mk, { entries: entries, refDate: refDate }).then(function(vaultPayload){
+                  localStorage.setItem(PWWRAP_KEY, JSON.stringify(pwWrap));
+                  localStorage.setItem(VAULT_KEY, JSON.stringify(vaultPayload));
+                  sessionKey = mk; mkRawBytes = mkBytes;
+                });
+              });
+            });
+          });
+        }
+      }).then(function(){
+        setLockBusy(false, "Είσοδος");
+        unlockApp();
       }).catch(function(){
         setLockBusy(false, "Είσοδος");
         shakeErr("Λάθος κωδικός");
@@ -503,15 +642,22 @@
       if (v1 !== v2){ shakeErr("Οι κωδικοί δεν ταιριάζουν"); return; }
       setLockBusy(true, "Δημιουργία...");
       var newSalt = randomSaltB64();
-      deriveKey(v1, newSalt).then(function(key){
-        entries = []; refDate = DEFAULT_REF;
-        return encryptObj(key, { entries: entries, refDate: refDate }).then(function(payload){
-          localStorage.setItem(SALT_KEY, newSalt);
-          localStorage.setItem(VAULT_KEY, JSON.stringify(payload));
-          sessionKey = key;
-          setLockBusy(false, "Δημιουργία κωδικού");
-          unlockApp();
+      var mkBytes2 = randomMkBytes();
+      deriveKey(v1, newSalt).then(function(pwKey){
+        return importMk(mkBytes2).then(function(mk){
+          entries = []; refDate = DEFAULT_REF;
+          return encryptObj(pwKey, { mk: bytesToBase64(mkBytes2) }).then(function(pwWrap){
+            return encryptObj(mk, { entries: entries, refDate: refDate }).then(function(vaultPayload){
+              localStorage.setItem(SALT_KEY, newSalt);
+              localStorage.setItem(PWWRAP_KEY, JSON.stringify(pwWrap));
+              localStorage.setItem(VAULT_KEY, JSON.stringify(vaultPayload));
+              sessionKey = mk; mkRawBytes = mkBytes2;
+            });
+          });
         });
+      }).then(function(){
+        setLockBusy(false, "Δημιουργία κωδικού");
+        unlockApp();
       }).catch(function(){
         setLockBusy(false, "Δημιουργία κωδικού");
         shakeErr("Κάτι πήγε στραβά, δοκίμασε ξανά");
@@ -567,7 +713,7 @@
         if (tab === "dashboard") renderDashboard();
         if (tab === "history") renderHistory();
         if (tab === "charts") renderCharts();
-        if (tab === "settings") renderBackupMeta();
+        if (tab === "settings") renderSettings();
       });
     });
 
@@ -577,7 +723,7 @@
       ["dashboard","add","history","charts","settings"].forEach(function(name){
         $("view-"+name).classList.toggle("hidden", name !== "settings");
       });
-      renderBackupMeta();
+      renderSettings();
     });
 
     /* Month nav - dashboard */
@@ -637,9 +783,57 @@
     $("backupExportBtn").addEventListener("click", doExportBackup);
     $("backupImportBtn").addEventListener("click", function(){ $("importFile").click(); });
     $("importFile").addEventListener("change", handleImportFile);
+    $("bioEnableBtn").addEventListener("click", onEnableBiometric);
+    $("bioDisableBtn").addEventListener("click", onDisableBiometric);
 
-    renderBackupMeta();
+    renderSettings();
     renderDashboard();
+  }
+
+  /* ================= Biometric settings actions ================= */
+  function onEnableBiometric(){
+    var btn = $("bioEnableBtn");
+    btn.disabled = true;
+    btn.textContent = "Ακολούθησε τις οδηγίες της συσκευής σου...";
+    registerBiometric(mkRawBytes).then(function(){
+      btn.disabled = false;
+      renderSettings();
+    }).catch(function(err){
+      btn.disabled = false;
+      btn.textContent = "👆 Ενεργοποίηση Βιομετρικού Unlock";
+      alert("Δεν ήταν δυνατή η ενεργοποίηση βιομετρικού σε αυτή τη συσκευή/browser (" + (err && err.message ? err.message : "άγνωστο σφάλμα") + "). Μπορείς να συνεχίσεις κανονικά με τον κωδικό σου.");
+    });
+  }
+  function onDisableBiometric(){
+    localStorage.removeItem(BIOWRAP_KEY);
+    localStorage.removeItem(BIOCRED_KEY);
+    renderSettings();
+  }
+  function renderSettings(){
+    var statusEl = $("bioStatusText");
+    var enableBtn = $("bioEnableBtn");
+    var disableBtn = $("bioDisableBtn");
+    if (hasBiometric()){
+      statusEl.textContent = "Το βιομετρικό unlock είναι ενεργό σε αυτή τη συσκευή.";
+      enableBtn.classList.add("hidden");
+      disableBtn.classList.remove("hidden");
+      return;
+    }
+    disableBtn.classList.add("hidden");
+    if (!window.PublicKeyCredential){
+      statusEl.textContent = "Ο browser σου δεν υποστηρίζει βιομετρικό unlock (WebAuthn). Δοκίμασε ενημερωμένο Chrome.";
+      enableBtn.classList.add("hidden");
+      return;
+    }
+    biometricPlatformAvailable().then(function(available){
+      if (available){
+        statusEl.textContent = "Μπορείς να ενεργοποιήσεις βιομετρικό unlock (δαχτυλικό/πρόσωπο) σε αυτή τη συσκευή. Ο κωδικός σου παραμένει πάντα διαθέσιμος ως εναλλακτική.";
+        enableBtn.classList.remove("hidden");
+      } else {
+        statusEl.textContent = "Δεν εντοπίστηκε βιομετρικός αισθητήρας σε αυτή τη συσκευή. Θα χρησιμοποιείς τον κωδικό.";
+        enableBtn.classList.add("hidden");
+      }
+    });
   }
 
   /* ================= Calculations ================= */
@@ -775,9 +969,10 @@
   /* ================= Backup export / import ================= */
   function doExportBackup(){
     var salt = localStorage.getItem(SALT_KEY);
+    var pwWrap = localStorage.getItem(PWWRAP_KEY);
     var vault = localStorage.getItem(VAULT_KEY);
     if (!salt || !vault) return;
-    var payload = { app:"TakisPlan", version:2, salt: salt, vault: JSON.parse(vault) };
+    var payload = { app:"TakisPlan", version:3, salt: salt, pwWrap: pwWrap ? JSON.parse(pwWrap) : null, vault: JSON.parse(vault) };
     var blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
@@ -816,7 +1011,7 @@
     openModal(
       '<div class="modalBox">'+
       '<h3>Επαναφορά αντιγράφου ασφαλείας</h3>'+
-      '<p style="color:var(--muted); font-size:13px;">Θα αντικατασταθούν όλα τα τρέχοντα δεδομένα με αυτά του αντιγράφου. Γράψε τον κωδικό που χρησιμοποιούσες όταν έγινε αυτό το αντίγραφο.</p>'+
+      '<p style="color:var(--muted); font-size:13px;">Θα αντικατασταθούν όλα τα τρέχοντα δεδομένα με αυτά του αντιγράφου (το βιομετρικό αυτής της συσκευής θα χρειαστεί να ενεργοποιηθεί ξανά). Γράψε τον κωδικό που χρησιμοποιούσες όταν έγινε αυτό το αντίγραφο.</p>'+
       '<input class="field" id="impPw" type="password" placeholder="Κωδικός αντιγράφου" style="margin-bottom:10px;">'+
       '<div class="lockErr" id="impErr"></div>'+
       '<div class="modalActions"><button class="cancel" id="impCancel">Άκυρο</button><button class="confirm danger" id="impConfirm">Επαναφορά</button></div>'+
@@ -828,14 +1023,26 @@
       if (!pw){ $("impErr").textContent = "Γράψε τον κωδικό"; return; }
       $("impConfirm").disabled = true;
       $("impConfirm").textContent = "Έλεγχος...";
-      deriveKey(pw, backupData.salt).then(function(key){
-        return decryptObj(key, backupData.vault).then(function(data){
-          localStorage.setItem(SALT_KEY, backupData.salt);
-          localStorage.setItem(VAULT_KEY, JSON.stringify(backupData.vault));
-          closeModal();
-          alert("Η επαναφορά ολοκληρώθηκε. Η εφαρμογή θα ξεκλειδώσει ξανά με τον κωδικό του αντιγράφου.");
-          location.reload();
-        });
+      deriveKey(pw, backupData.salt).then(function(pwKey){
+        if (backupData.pwWrap){
+          return decryptObj(pwKey, backupData.pwWrap).then(function(obj){
+            return importMk(base64ToBytes(obj.mk)).then(function(mk){
+              return decryptObj(mk, backupData.vault);
+            });
+          });
+        }
+        // very old backups: vault was encrypted directly with the password key
+        return decryptObj(pwKey, backupData.vault);
+      }).then(function(){
+        localStorage.setItem(SALT_KEY, backupData.salt);
+        if (backupData.pwWrap) localStorage.setItem(PWWRAP_KEY, JSON.stringify(backupData.pwWrap));
+        else localStorage.removeItem(PWWRAP_KEY);
+        localStorage.setItem(VAULT_KEY, JSON.stringify(backupData.vault));
+        localStorage.removeItem(BIOWRAP_KEY);
+        localStorage.removeItem(BIOCRED_KEY);
+        closeModal();
+        alert("Η επαναφορά ολοκληρώθηκε. Η εφαρμογή θα ξεκλειδώσει ξανά με τον κωδικό του αντιγράφου.");
+        location.reload();
       }).catch(function(){
         $("impConfirm").disabled = false;
         $("impConfirm").textContent = "Επαναφορά";
@@ -873,15 +1080,16 @@
       $("pwConfirm").disabled = true;
       $("pwConfirm").textContent = "Έλεγχος...";
       var oldSalt = localStorage.getItem(SALT_KEY);
-      deriveKey(cur, oldSalt).then(function(oldKey){
-        return decryptObj(oldKey, JSON.parse(localStorage.getItem(VAULT_KEY)));
-      }).then(function(){
+      deriveKey(cur, oldSalt).then(function(oldPwKey){
+        var pwWrap = JSON.parse(localStorage.getItem(PWWRAP_KEY));
+        return decryptObj(oldPwKey, pwWrap);
+      }).then(function(obj){
+        var mkBytes = base64ToBytes(obj.mk);
         var newSalt = randomSaltB64();
-        return deriveKey(n1, newSalt).then(function(newKey){
-          return encryptObj(newKey, { entries: entries, refDate: refDate }).then(function(payload){
+        return deriveKey(n1, newSalt).then(function(newPwKey){
+          return encryptObj(newPwKey, { mk: bytesToBase64(mkBytes) }).then(function(newPwWrap){
             localStorage.setItem(SALT_KEY, newSalt);
-            localStorage.setItem(VAULT_KEY, JSON.stringify(payload));
-            sessionKey = newKey;
+            localStorage.setItem(PWWRAP_KEY, JSON.stringify(newPwWrap));
             closeModal();
           });
         });
@@ -914,7 +1122,7 @@
     openModal(
       '<div class="modalBox">'+
       '<h3>Διαγραφή όλων των δεδομένων;</h3>'+
-      '<p style="color:var(--muted); font-size:13px;">Αυτή η ενέργεια δεν αναιρείται. Όλες οι καταχωρήσεις εσόδων και εξόδων θα διαγραφούν (ο κωδικός σου παραμένει ίδιος).</p>'+
+      '<p style="color:var(--muted); font-size:13px;">Αυτή η ενέργεια δεν αναιρείται. Όλες οι καταχωρήσεις εσόδων και εξόδων θα διαγραφούν (ο κωδικός και το βιομετρικό σου παραμένουν ίδια).</p>'+
       '<div class="modalActions"><button class="cancel" id="resCancel">Άκυρο</button><button class="confirm danger" id="resConfirm">Διαγραφή</button></div>'+
       '</div>'
     );
