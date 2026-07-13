@@ -166,6 +166,15 @@
   .legendRow{display:flex; gap:16px; justify-content:center; margin-bottom:8px; font-size:12px; color:var(--muted);}
   .legendRow span.dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px;}
 
+  /* ---------- Calendar ---------- */
+  .calGrid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
+  .calWD{font-size:10px; color:var(--muted); text-align:center; font-weight:700; padding-bottom:4px;}
+  .calCell{aspect-ratio:1; border-radius:8px; background:#f4f6fb; border:1px solid var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:2px; overflow:hidden;}
+  .calCell.empty{background:none; border:none;}
+  .calCell .d{font-size:10px; color:var(--muted); font-weight:600;}
+  .calCell .amt{font-size:9px; color:var(--red); font-weight:800; margin-top:2px; text-align:center;}
+  .calCell.today{border-color:var(--accent); border-width:2px;}
+
   /* ---------- Settings ---------- */
   .settingsBtn{
     width:100%; text-align:left; background:#fff; border:1px solid var(--border); border-radius:12px;
@@ -329,6 +338,24 @@
       <div id="historyList"></div>
     </section>
 
+    <!-- Calendar -->
+    <section id="view-calendar" class="hidden">
+      <div class="monthNav">
+        <button id="prevMonthCal">‹</button>
+        <div class="label" id="monthLabelCal">—</div>
+        <button id="nextMonthCal">›</button>
+      </div>
+
+      <div class="statRow">
+        <div class="stat expense"><div class="v" id="calSoFar">0,00 €</div><div class="l">Έξοδα έως σήμερα</div></div>
+        <div class="stat expense"><div class="v" id="calMonthTotal">0,00 €</div><div class="l">Σύνολο μήνα</div></div>
+      </div>
+
+      <div class="card">
+        <div class="calGrid" id="calGrid"></div>
+      </div>
+    </section>
+
     <!-- Charts -->
     <section id="view-charts" class="hidden">
       <div class="card">
@@ -400,6 +427,7 @@
     <button data-tab="dashboard" class="active"><span class="ic">🏠</span>Αρχική</button>
     <button data-tab="add"><span class="ic">➕</span>Νέα</button>
     <button data-tab="history"><span class="ic">📋</span>Ιστορικό</button>
+    <button data-tab="calendar"><span class="ic">📅</span>Ημερολόγιο</button>
     <button data-tab="charts"><span class="ic">📊</span>Γραφήματα</button>
     <button data-tab="settings"><span class="ic">⚙️</span>Ρυθμίσεις</button>
   </nav>
@@ -810,6 +838,7 @@
     histMonth: todayStr().slice(0,7),
     histYear: todayStr().slice(0,4),
     chartMonth: todayStr().slice(0,7),
+    calMonth: todayStr().slice(0,7),
     entryType: "income"
   };
 
@@ -826,11 +855,12 @@
         tabButtons.forEach(function(b){ b.classList.remove("active"); });
         btn.classList.add("active");
         var tab = btn.getAttribute("data-tab");
-        ["dashboard","add","history","charts","settings"].forEach(function(name){
+        ["dashboard","add","history","calendar","charts","settings"].forEach(function(name){
           $("view-"+name).classList.toggle("hidden", name !== tab);
         });
         if (tab === "dashboard") renderDashboard();
         if (tab === "history") renderHistory();
+        if (tab === "calendar") renderCalendar();
         if (tab === "charts") renderCharts();
         if (tab === "settings") renderSettings();
       });
@@ -839,7 +869,7 @@
     $("gearBtn").addEventListener("click", function(){
       tabButtons.forEach(function(b){ b.classList.remove("active"); });
       document.querySelector('[data-tab="settings"]').classList.add("active");
-      ["dashboard","add","history","charts","settings"].forEach(function(name){
+      ["dashboard","add","history","calendar","charts","settings"].forEach(function(name){
         $("view-"+name).classList.toggle("hidden", name !== "settings");
       });
       renderSettings();
@@ -856,6 +886,10 @@
     });
     $("prevMonthC").addEventListener("click", function(){ state.chartMonth = shiftMonth(state.chartMonth,-1); renderCharts(); });
     $("nextMonthC").addEventListener("click", function(){ state.chartMonth = shiftMonth(state.chartMonth,1); renderCharts(); });
+
+    /* Month nav - calendar */
+    $("prevMonthCal").addEventListener("click", function(){ state.calMonth = shiftMonth(state.calMonth,-1); renderCalendar(); });
+    $("nextMonthCal").addEventListener("click", function(){ state.calMonth = shiftMonth(state.calMonth,1); renderCalendar(); });
     $("includeFutureToggle").addEventListener("change", function(){
       var checked = $("includeFutureToggle").checked;
       localStorage.setItem(INCLUDE_FUTURE_KEY, checked ? "1" : "0");
@@ -1175,6 +1209,46 @@
     });
   }
 
+  var CAL_WEEKDAYS = ["Δ","Τ","Τ","Π","Π","Σ","Κ"];
+  function daysInMonthYM(y,m){ return new Date(y, m, 0).getDate(); } // m is 1-indexed
+  function firstWeekdayOfMonth(y,m){
+    var jsDay = new Date(y, m-1, 1).getDay(); // 0=Sunday..6=Saturday
+    return (jsDay + 6) % 7; // convert to Monday-first index (0=Monday..6=Sunday)
+  }
+  function renderCalendar(){
+    var parts = state.calMonth.split("-");
+    var y = parseInt(parts[0],10), m = parseInt(parts[1],10);
+    $("monthLabelCal").textContent = monthLabel(state.calMonth);
+
+    var dayTotals = {};
+    entries.forEach(function(e){
+      if (e.type === "expense" && monthKey(e.date) === state.calMonth){
+        dayTotals[e.date] = (dayTotals[e.date] || 0) + e.amount;
+      }
+    });
+
+    var monthTotal = 0, soFarTotal = 0;
+    var today = todayStr();
+    Object.keys(dayTotals).forEach(function(d){
+      monthTotal += dayTotals[d];
+      if (d <= today) soFarTotal += dayTotals[d];
+    });
+    $("calMonthTotal").textContent = money(monthTotal);
+    $("calSoFar").textContent = money(soFarTotal);
+
+    var dim = daysInMonthYM(y,m);
+    var offset = firstWeekdayOfMonth(y,m);
+    var html = CAL_WEEKDAYS.map(function(wd){ return '<div class="calWD">'+wd+'</div>'; }).join("");
+    for (var i=0;i<offset;i++){ html += '<div class="calCell empty"></div>'; }
+    for (var day=1; day<=dim; day++){
+      var dstr = y+"-"+pad(m)+"-"+pad(day);
+      var amt = dayTotals[dstr] || 0;
+      var isToday = dstr === today;
+      html += '<div class="calCell'+(isToday?' today':'')+'"><div class="d">'+day+'</div>'+(amt>0 ? '<div class="amt">'+Math.round(amt)+'€</div>' : '')+'</div>';
+    }
+    $("calGrid").innerHTML = html;
+  }
+
   function last6Months(){
     var arr = [];
     var ym = todayStr().slice(0,7);
@@ -1213,7 +1287,12 @@
     var incTotal = incData.reduce(function(s,a){ return s+a.amount; }, 0);
     $("expenseBreakdownTotal").textContent = "Σύνολο: " + money(expTotal);
     $("incomeBreakdownTotal").textContent = "Σύνολο: " + money(incTotal);
-    renderBreakdown("expenseBreakdown", expData, "var(--red)");
+    if (chartScope === "month"){
+      var expSoFar = categoryBreakdown(state.chartMonth,"expense", todayStr());
+      renderBreakdownRemaining("expenseBreakdown", expData, expSoFar, "var(--red)");
+    } else {
+      renderBreakdown("expenseBreakdown", expData, "var(--red)");
+    }
     renderBreakdown("incomeBreakdown", incData, "var(--green)");
   }
 
@@ -1226,6 +1305,28 @@
       return '<div class="barChartRow"><div class="bcl" title="'+escapeHtml(a.category)+'">'+escapeHtml(a.category)+'</div>'+
         '<div class="bwrap"><div class="bfill" style="width:'+pct+'%;background:'+color+';"></div></div>'+
         '<div class="bval">'+money(a.amount)+'</div></div>';
+    }).join("");
+  }
+
+  function renderBreakdownRemaining(elId, fullArr, soFarArr, color){
+    var box = $(elId);
+    if (!fullArr.length){ box.innerHTML = '<div class="emptyMsg">Χωρίς δεδομένα</div>'; return; }
+    var soFarMap = {};
+    soFarArr.forEach(function(a){ soFarMap[a.category] = a.amount; });
+    var max = Math.max.apply(null, fullArr.map(function(a){return a.amount;}));
+    box.innerHTML = fullArr.map(function(a){
+      var soFar = soFarMap[a.category] || 0;
+      var pct = Math.max(4, Math.round((a.amount/max)*100));
+      var soFarPct = a.amount ? Math.min(100, Math.round((soFar/a.amount)*100)) : 0;
+      return '<div class="barChartRow"><div class="bcl" title="'+escapeHtml(a.category)+'">'+escapeHtml(a.category)+'</div>'+
+        '<div class="bwrap">'+
+          '<div class="bfill" style="width:'+pct+'%;background:'+color+';opacity:.35;"></div>'+
+          '<div class="bfill" style="position:absolute; top:0; left:0; width:'+Math.round(pct*soFarPct/100)+'%;background:'+color+';"></div>'+
+        '</div>'+
+        '<div class="bval" style="width:auto; min-width:78px; line-height:1.25;">'+
+          '<div style="font-weight:700;">'+money(soFar)+'</div>'+
+          '<div style="font-size:10px; color:var(--muted); font-weight:400;">από '+money(a.amount)+'</div>'+
+        '</div></div>';
     }).join("");
   }
 
@@ -1560,7 +1661,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=14').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=15').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
