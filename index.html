@@ -583,7 +583,7 @@
   }
 
   var INCOME_CATEGORIES = ["Μισθός","Δώρο Πάσχα","Δώρο Χριστουγέννων","Επίδομα Αδείας","Bonus","Έσοδα από Τυχερά Παιχνίδια","Έσοδα από 2η Εργασία","Άλλο Έσοδο"];
-  var EXPENSE_CATEGORIES = ["Ενοίκιο Σπίτι","ΔΕΗ Ρεύμα","ΔΕΗ Internet","Cosmote TV","Ασφάλεια Γιώργου","Ασφάλεια Αυτοκινήτου","Δάνειο από Εργοδότη","Διατροφή Διαζυγίου","Βενζίνη Αυτοκινήτου","Διόδια","Supermarket","Οικιακές Συνεργασίες","Πετρέλαιο Θέρμανσης","Φαγητό από Έξω","Καπνικά","Συνδρομές σε apps","Έκτακτα Έξοδα","Μετακίνηση (Μετρό κτλ)","Ταξί","VODAFONE","Διακοπές/Ενοικίαση","Εφορία","ΕΦΚΑ","Διασκέδαση","Άλλο Έξοδο"];
+  var EXPENSE_CATEGORIES = ["Ενοίκιο Σπίτι","ΔΕΗ Ρεύμα","ΔΕΗ Internet","Cosmote TV","Ασφάλεια Γιώργου","Ασφάλεια Αυτοκινήτου","Δάνειο από Εργοδότη","Διατροφή Διαζυγίου","Βενζίνη Αυτοκινήτου","Διόδια","Supermarket","Οικιακές Συσκευές","Πετρέλαιο Θέρμανσης","Φαγητό από Έξω","Καπνικά","Συνδρομές σε apps","Έκτακτα Έξοδα","Μετακίνηση (Μετρό κτλ)","Ταξί","VODAFONE","Διακοπές/Ενοικίαση","Εφορία","ΕΦΚΑ","Διασκέδαση","Άλλο Έξοδο"];
 
   /* ================= Crypto layer (AES-256-GCM, key derived via PBKDF2 / WebAuthn PRF) ================= */
   function bytesToBase64(bytes){
@@ -1325,11 +1325,21 @@
   /* Συμπληρώνει πεδία που λείπουν σε παλιές καταχωρήσεις.
      Κανόνας για το "paid": ό,τι ανήκει σε μήνα πριν από τον τρέχοντα θεωρείται
      πληρωμένο· ο τρέχων μήνας ξεκινά εκκρεμής και τον τσεκάρει ο χρήστης. */
+  /* Μετονομασίες κατηγοριών. Οι παλιές καταχωρήσεις κρατούν το όνομα ως κείμενο,
+     οπότε πρέπει να ενημερωθούν κι αυτές — και να σφραγιστούν, ώστε η αλλαγή να
+     περάσει και στην άλλη συσκευή μέσω της συγχώνευσης. */
+  var CATEGORY_RENAMES = { "Οικιακές Συνεργασίες": "Οικιακές Συσκευές" };
+
   function migrateEntries(){
     var changed = false;
     var today = todayStr();
     var thisMonth = today.slice(0,7);
     entries.forEach(function(e){
+      if (CATEGORY_RENAMES[e.category]){
+        e.category = CATEGORY_RENAMES[e.category];
+        touch(e);
+        changed = true;
+      }
       if (typeof e.confirmed === "undefined"){
         e.confirmed = e.date <= today;
         changed = true;
@@ -2411,7 +2421,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=20').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=21').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
