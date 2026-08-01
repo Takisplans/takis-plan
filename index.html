@@ -185,6 +185,9 @@
   .paySummary .todo{background:var(--red-l); color:var(--red);}
   .paySummary b{display:block; font-size:15px; font-weight:800;}
   .payHint{font-size:12px; color:var(--muted); margin:-4px 0 12px 2px;}
+  .barChartRow.clickable{cursor:pointer; border-radius:8px;}
+  .barChartRow.clickable:hover{background:#f4f6fb;}
+  .barChartRow.clickable:active{opacity:.7;}
 
   /* ---------- Charts ---------- */
   .barChartRow{display:flex; align-items:center; gap:10px; margin-bottom:10px; font-size:13px;}
@@ -465,6 +468,7 @@
 
       <div class="card">
         <h2 id="expenseBreakdownTitle">Έξοδα ανά κατηγορία (τρέχων μήνας)</h2>
+        <div class="payHint">Πάτα μια κατηγορία για αναλυτική εικόνα.</div>
         <div id="expenseBreakdownTotal" style="font-weight:800; font-size:16px; color:var(--red); margin:-4px 0 14px;">Σύνολο: 0,00 €</div>
         <div id="expenseBreakdown"></div>
       </div>
@@ -1669,6 +1673,73 @@
       renderBreakdown("expenseBreakdown", expData, "var(--red)");
     }
     renderBreakdown("incomeBreakdown", incData, "var(--green)");
+
+    bindCategoryClicks("expenseBreakdown", "expense");
+    bindCategoryClicks("incomeBreakdown", "income");
+  }
+
+  function bindCategoryClicks(elId, type){
+    Array.prototype.forEach.call($(elId).querySelectorAll(".barChartRow[data-cat]"), function(row){
+      row.addEventListener("click", function(){
+        openCategoryModal(row.getAttribute("data-cat"), type);
+      });
+    });
+  }
+
+  /* Ανάλυση κατηγορίας: όλες οι κινήσεις του μήνα με ημερομηνίες και κατάσταση πληρωμής. */
+  function openCategoryModal(category, type){
+    var list = entries.filter(function(e){
+      return e.type === type && e.category === category && monthKey(e.date) === state.chartMonth;
+    }).sort(function(a,b){ return a.date.localeCompare(b.date); });
+
+    var done = 0, todo = 0;
+    list.forEach(function(e){
+      var a = Number(e.amount)||0;
+      if (type === "income" || e.paid) done += a; else todo += a;
+    });
+
+    var rows = list.length ? list.map(function(e){
+      var dl = e.date.split("-").reverse().join("/");
+      if (type === "income"){
+        return '<div class="entryRow"><div class="l"><span class="cat">'+dl+'</span>'+
+          (e.note?'<span class="note">'+escapeHtml(e.note)+'</span>':'')+'</div>'+
+          '<div class="amt income">+'+money(e.amount)+'</div></div>';
+      }
+      var overdue = !e.paid && e.date <= todayStr();
+      return '<div class="payRow'+(e.paid?" paid":"")+(overdue?" overdue":"")+'" data-id="'+e.id+'">'+
+        '<div class="payBox">'+(e.paid?"✓":"")+'</div>'+
+        '<div class="l"><span class="cat">'+dl+'</span>'+
+        '<span class="note">'+(e.paid ? "πληρωμένο" : (overdue ? "εκκρεμεί" : "μελλοντικό"))+
+          (e.note ? " · "+escapeHtml(e.note) : "")+'</span></div>'+
+        '<div class="amt">'+money(e.amount)+'</div></div>';
+    }).join("") : '<div class="emptyMsg">Καμία κίνηση</div>';
+
+    openModal(
+      '<div class="modalBox" id="catBox">'+
+      '<h3>'+escapeHtml(category)+'</h3>'+
+      '<p style="color:var(--muted); font-size:12px; margin:-6px 0 12px;">'+monthLabel(state.chartMonth)+'</p>'+
+      (list.length ?
+        '<div class="dayTot">'+
+        '<div class="done"><b>'+money(done)+'</b>'+(type==="income"?"εισπράχθηκαν":"πληρωμένα")+'</div>'+
+        (type==="income" ? '' : '<div class="todo"><b>'+money(todo)+'</b>εκκρεμούν</div>')+
+        '</div>' : '')+
+      '<div id="catRows">'+rows+'</div>'+
+      '<div class="modalActions"><button class="confirm" id="catClose">Κλείσιμο</button></div>'+
+      '</div>'
+    );
+    $("catClose").addEventListener("click", closeModal);
+    Array.prototype.forEach.call($("catRows").querySelectorAll(".payRow"), function(row){
+      row.addEventListener("click", function(){
+        var entry = entries.find(function(x){ return x.id === row.getAttribute("data-id"); });
+        if (!entry) return;
+        entry.paid = !entry.paid;
+        if (entry.paid) entry.confirmed = true;
+        touch(entry);
+        saveVault();
+        openCategoryModal(category, type);
+        renderDashboard();
+      });
+    });
   }
 
   function renderBreakdown(elId, arr, color){
@@ -1677,7 +1748,7 @@
     var max = Math.max.apply(null, arr.map(function(a){return a.amount;}));
     box.innerHTML = arr.map(function(a){
       var pct = Math.max(4, Math.round((a.amount/max)*100));
-      return '<div class="barChartRow"><div class="bcl" title="'+escapeHtml(a.category)+'">'+escapeHtml(a.category)+'</div>'+
+      return '<div class="barChartRow clickable" data-cat="'+escapeHtml(a.category)+'"><div class="bcl" title="'+escapeHtml(a.category)+'">'+escapeHtml(a.category)+'</div>'+
         '<div class="bwrap"><div class="bfill" style="width:'+pct+'%;background:'+color+';"></div></div>'+
         '<div class="bval">'+money(a.amount)+'</div></div>';
     }).join("");
@@ -1693,7 +1764,7 @@
       var soFar = soFarMap[a.category] || 0;
       var pct = Math.max(4, Math.round((a.amount/max)*100));
       var soFarPct = a.amount ? Math.min(100, Math.round((soFar/a.amount)*100)) : 0;
-      return '<div class="barChartRow"><div class="bcl" title="'+escapeHtml(a.category)+'">'+escapeHtml(a.category)+'</div>'+
+      return '<div class="barChartRow clickable" data-cat="'+escapeHtml(a.category)+'"><div class="bcl" title="'+escapeHtml(a.category)+'">'+escapeHtml(a.category)+'</div>'+
         '<div class="bwrap">'+
           '<div class="bfill" style="width:'+pct+'%;background:'+color+';opacity:.35;"></div>'+
           '<div class="bfill" style="position:absolute; top:0; left:0; width:'+Math.round(pct*soFarPct/100)+'%;background:'+color+';"></div>'+
@@ -2549,7 +2620,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=24').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=25').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
