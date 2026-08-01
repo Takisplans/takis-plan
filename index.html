@@ -710,6 +710,19 @@
   var sessionKey = null;      // MK CryptoKey, only in memory while unlocked
   var mkRawBytes = null;      // raw MK bytes, kept in memory only while unlocked (needed to enable biometrics later)
   var entries = [];
+  /* Ταφόπλακες διαγραμμένων: { id: χρονοσήμανση διαγραφής }. Χρειάζονται ώστε
+     μια διαγραφή σε μια συσκευή να μην "αναστηθεί" από τη συγχώνευση. */
+  var tombstones = {};
+  var TOMB_KEEP_MS = 120 * 24 * 60 * 60 * 1000;
+
+  function nowIso(){ return new Date().toISOString(); }
+  /* Κάθε αλλαγή σε καταχώρηση σφραγίζεται, ώστε η συγχώνευση να ξέρει ποια
+     εκδοχή είναι πιο πρόσφατη — ανά γραμμή, όχι ανά αρχείο. */
+  function touch(entry){ if (entry) entry.mtime = nowIso(); return entry; }
+  function removeEntry(id){
+    entries = entries.filter(function(e){ return e.id !== id; });
+    tombstones[id] = nowIso();
+  }
   var refDate = DEFAULT_REF;
   var appUnlocked = false;
 
@@ -731,16 +744,16 @@
   function curVault(){ return isRequester() ? (memVault ? JSON.stringify(memVault) : null) : localStorage.getItem(VAULT_KEY); }
   function curUpdated(){ return isRequester() ? memVaultUpdated : localStorage.getItem(VAULT_UPDATED_KEY); }
 
-  function saveVault(){
+  function saveVault(skipPush){
     if (!sessionKey) return Promise.resolve();
-    return encryptObj(sessionKey, { entries: entries, refDate: refDate }).then(function(payload){
+    return encryptObj(sessionKey, { entries: entries, refDate: refDate, tombstones: tombstones }).then(function(payload){
       var stamp = new Date().toISOString();
       memVault = payload; memVaultUpdated = stamp;
       if (!isRequester()){
         localStorage.setItem(VAULT_KEY, JSON.stringify(payload));
         localStorage.setItem(VAULT_UPDATED_KEY, stamp);
       }
-      cloudPushSoon();
+      if (!skipPush) cloudPushSoon();
     });
   }
 
@@ -856,6 +869,7 @@
       var vaultPayload = JSON.parse(localStorage.getItem(VAULT_KEY));
       return decryptObj(sessionKey, vaultPayload).then(function(data){
         entries = data.entries || [];
+        tombstones = data.tombstones || {};
         refDate = data.refDate || DEFAULT_REF;
         bioBtn.disabled = false;
         bioBtn.textContent = "👆 Βιομετρικό Unlock";
@@ -888,6 +902,7 @@
               return decryptObj(mk, vaultPayload).then(function(data){
                 sessionKey = mk; mkRawBytes = mkBytes;
                 entries = data.entries || []; refDate = data.refDate || DEFAULT_REF;
+                tombstones = data.tombstones || {};
               });
             });
           });
@@ -896,6 +911,7 @@
           var legacyVault = JSON.parse(localStorage.getItem(VAULT_KEY));
           return decryptObj(pwKey, legacyVault).then(function(data){
             entries = data.entries || []; refDate = data.refDate || DEFAULT_REF;
+            tombstones = data.tombstones || {};
             var mkBytes = randomMkBytes();
             return importMk(mkBytes).then(function(mk){
               return encryptObj(pwKey, { mk: bytesToBase64(mkBytes) }).then(function(pwWrap){
@@ -925,7 +941,7 @@
       var mkBytes2 = randomMkBytes();
       deriveKey(v1, newSalt).then(function(pwKey){
         return importMk(mkBytes2).then(function(mk){
-          entries = []; refDate = DEFAULT_REF;
+          entries = []; refDate = DEFAULT_REF; tombstones = {};
           return encryptObj(pwKey, { mk: bytesToBase64(mkBytes2) }).then(function(pwWrap){
             return encryptObj(mk, { entries: entries, refDate: refDate }).then(function(vaultPayload){
               localStorage.setItem(SALT_KEY, newSalt);
@@ -1158,10 +1174,10 @@
         var groupId = uid();
         for (var i=0; i<months; i++){
           var rdate = addMonthsToDate(date, i);
-          entries.push({ id: uid(), type:"expense", category: category, amount: amount, date: rdate, note: note, recurringId: groupId, confirmed: rdate <= todayStr(), paid: false });
+          entries.push({ id: uid(), type:"expense", category: category, amount: amount, date: rdate, note: note, recurringId: groupId, confirmed: rdate <= todayStr(), paid: false, mtime: nowIso() });
         }
       } else {
-        entries.push({ id: uid(), type: state.entryType, category: category, amount: amount, date: date, note: note, confirmed: date <= todayStr(), paid: state.entryType !== "expense" });
+        entries.push({ id: uid(), type: state.entryType, category: category, amount: amount, date: date, note: note, confirmed: date <= todayStr(), paid: state.entryType !== "expense", mtime: nowIso() });
       }
       saveVault();
       $("fAmount").value = "";
@@ -1322,6 +1338,12 @@
         e.paid = (e.type === "expense") ? (monthKey(e.date) < thisMonth) : true;
         changed = true;
       }
+      /* Παλιές καταχωρήσεις χωρίς σφραγίδα: παίρνουν την αρχή του χρόνου, ώστε
+         οποιαδήποτε πραγματική αλλαγή να υπερισχύει στη συγχώνευση. */
+      if (typeof e.mtime === "undefined"){
+        e.mtime = "1970-01-01T00:00:00.000Z";
+        changed = true;
+      }
     });
     return changed;
   }
@@ -1365,6 +1387,7 @@
         entry.paid = !entry.paid;
         /* Αν το σημειώνεις ως πληρωμένο, προφανώς ισχύει ακόμα. */
         if (entry.paid) entry.confirmed = true;
+        touch(entry);
         saveVault();
         renderPayments();
       });
@@ -1411,7 +1434,7 @@
     box.querySelectorAll(".del").forEach(function(btn){
       btn.addEventListener("click", function(){
         var id = btn.getAttribute("data-id");
-        entries = entries.filter(function(e){ return e.id !== id; });
+        removeEntry(id);
         saveVault();
         renderHistory();
       });
@@ -1679,8 +1702,23 @@
       if (r.status === 401) throw new Error("Το GitHub token δεν είναι έγκυρο ή έληξε.");
       if (r.status === 403) throw new Error("Το token δεν έχει δικαίωμα στα gists.");
       if (r.status === 404) throw new Error("Δεν βρέθηκε το gist συγχρονισμού.");
-      if (!r.ok) throw new Error("Σφάλμα GitHub (" + r.status + ")");
+      if (!r.ok){
+        var err = new Error("Σφάλμα GitHub (" + r.status + ")");
+        err.status = r.status;
+        throw err;
+      }
       return r.json();
+    });
+  }
+  /* Το GitHub επιστρέφει 409 όταν δύο συσκευές γράφουν ταυτόχρονα. Παλιότερα
+     η αποτυχία περνούσε σιωπηλά και η αλλαγή χανόταν — τώρα ξαναδοκιμάζουμε. */
+  function ghApiRetry(path, opts, tries){
+    tries = tries || 4;
+    return ghApi(path, opts).catch(function(e){
+      var retriable = (e.status === 409 || e.status === 502 || e.status === 503 || !e.status);
+      if (!retriable || tries <= 1) throw e;
+      return new Promise(function(res){ setTimeout(res, 900 + Math.random()*900); })
+        .then(function(){ return ghApiRetry(path, opts, tries-1); });
     });
   }
   function parseOrNull(t){ try { return JSON.parse(t); } catch(e){ return null; } }
@@ -1695,7 +1733,7 @@
     return Promise.resolve(parseOrNull(f.content));
   }
   function gistPatch(files){
-    return ghApi("/gists/" + gistId(), { method:"PATCH", body: JSON.stringify({ files: files }) });
+    return ghApiRetry("/gists/" + gistId(), { method:"PATCH", body: JSON.stringify({ files: files }) });
   }
   function findOrCreateGist(){
     return ghApi("/gists?per_page=100&_=" + Date.now()).then(function(list){
@@ -1765,28 +1803,81 @@
       setSyncStatus("ok");
     });
   }
-  /* Νικάει το πιο πρόσφατο (last-write-wins) */
+  /* Συγχώνευση ανά καταχώρηση: για κάθε γραμμή κρατάμε την πιο πρόσφατη εκδοχή
+     (κατά mtime). Έτσι μια αλλαγή στο ενοίκιο από το PC δεν πατιέται από μια
+     άσχετη αλλαγή στο supermarket που έγινε αργότερα στο κινητό. */
+  function mergeVaults(remoteEntries, remoteTombs){
+    var byId = {};
+    function absorb(list){
+      (list || []).forEach(function(e){
+        if (!e || !e.id) return;
+        var cur = byId[e.id];
+        if (!cur || (e.mtime || "") > (cur.mtime || "")) byId[e.id] = e;
+      });
+    }
+    absorb(entries);
+    absorb(remoteEntries);
+
+    var tombs = {};
+    [tombstones, remoteTombs].forEach(function(t){
+      Object.keys(t || {}).forEach(function(id){
+        if (!tombs[id] || t[id] > tombs[id]) tombs[id] = t[id];
+      });
+    });
+
+    var out = [];
+    Object.keys(byId).forEach(function(id){
+      var e = byId[id];
+      /* Διαγραμμένη, εκτός αν επεξεργάστηκε ΜΕΤΑ τη διαγραφή. */
+      if (tombs[id] && tombs[id] >= (e.mtime || "")) return;
+      out.push(e);
+    });
+
+    var cutoff = new Date(Date.now() - TOMB_KEEP_MS).toISOString();
+    Object.keys(tombs).forEach(function(id){ if (tombs[id] < cutoff) delete tombs[id]; });
+
+    return { entries: out, tombstones: tombs };
+  }
+
+  function stateSignature(list, tombs){
+    return list.map(function(e){ return e.id+":"+(e.mtime||""); }).sort().join("|") +
+           "#" + Object.keys(tombs||{}).sort().join(",");
+  }
+
   function cloudPull(){
     if (!syncEnabled() || !sessionKey) return Promise.resolve(false);
     setSyncStatus("busy");
     return gistGet().then(function(g){ return gistFile(g, VAULT_FILE); }).then(function(remote){
       if (!remote || !remote.updatedAt || !remote.vault){ setSyncStatus("ok"); return false; }
-      var local = curUpdated();
-      if (local && local >= remote.updatedAt){ setSyncStatus("ok"); return false; }
+      if (remote.salt) memSalt = remote.salt;
+      if (remote.pwWrap) memPwWrap = JSON.stringify(remote.pwWrap);
       return decryptObj(sessionKey, remote.vault).then(function(data){
-        entries = data.entries || [];
-        refDate = data.refDate || DEFAULT_REF;
+        var beforeLocal = stateSignature(entries, tombstones);
+        var remoteSig = stateSignature(data.entries || [], data.tombstones);
+        var merged = mergeVaults(data.entries, data.tombstones);
+        entries = merged.entries;
+        tombstones = merged.tombstones;
+        /* Το refDate δεν έχει δική του χρονοσήμανση: κρατάμε το πιο πρόσφατο αρχείο. */
+        var localUpd = curUpdated();
+        if (!localUpd || remote.updatedAt > localUpd) refDate = data.refDate || refDate || DEFAULT_REF;
         migrateEntries();
-        memVault = remote.vault; memVaultUpdated = remote.updatedAt;
-        if (remote.salt) memSalt = remote.salt;
-        if (remote.pwWrap) memPwWrap = JSON.stringify(remote.pwWrap);
-        if (!isRequester()){
-          localStorage.setItem(VAULT_KEY, JSON.stringify(remote.vault));
-          localStorage.setItem(VAULT_UPDATED_KEY, remote.updatedAt);
-        }
+
+        var mergedSig = stateSignature(entries, tombstones);
+        var localChanged = mergedSig !== beforeLocal;   // ήρθε κάτι νέο από το cloud
+        var remoteStale  = mergedSig !== remoteSig;     // το cloud δεν έχει ό,τι έχουμε εμείς
+
         localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+        if (localChanged || remoteStale){
+          return saveVault(true).then(function(){
+            /* Ανεβάζουμε μόνο αν το cloud δεν έχει ήδη ό,τι έχουμε. */
+            if (remoteStale) return cloudPush();
+          }).then(function(){
+            setSyncStatus("ok");
+            return localChanged;
+          });
+        }
         setSyncStatus("ok");
-        return true;
+        return false;
       });
     });
   }
@@ -2158,6 +2249,7 @@
       entry.date = date;
       entry.note = note;
       entry.confirmed = true;
+      touch(entry);
       saveVault();
       closeModal();
       renderHistory();
@@ -2185,12 +2277,13 @@
     );
     $("pendYes").addEventListener("click", function(){
       entry.confirmed = true;
+      touch(entry);
       saveVault();
       closeModal();
       onDone();
     });
     $("pendNo").addEventListener("click", function(){
-      entries = entries.filter(function(e){ return e.id !== entry.id; });
+      removeEntry(entry.id);
       saveVault();
       closeModal();
       renderHistory();
@@ -2303,7 +2396,8 @@
     );
     $("resCancel").addEventListener("click", closeModal);
     $("resConfirm").addEventListener("click", function(){
-      entries = [];
+      /* Ταφόπλακες σε όλα, αλλιώς η συγχώνευση θα τα ανέσταινε από το cloud. */
+      entries.slice().forEach(function(e){ removeEntry(e.id); });
       saveVault();
       closeModal();
       renderDashboard();
@@ -2317,7 +2411,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=19').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=20').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
