@@ -204,11 +204,13 @@
   .calCell .amt{font-size:9px; color:var(--red); font-weight:800; margin-top:2px; text-align:center;}
   .calCell.today{border-color:var(--accent); border-width:2px;}
   .calCell.has{cursor:pointer;}
-  /* Πράσινο μόνο όταν έχουν κλείσει όλα· κόκκινο αν μένει έστω ένα. */
+  /* Πράσινο = πληρωμένα, κόκκινο = εκκρεμότητα. Μια μέρα μπορεί να δείχνει
+     και τα δύο νούμερα ταυτόχρονα. */
   .calCell.allPaid{background:var(--green-l); border-color:#bfe3c4;}
-  .calCell.allPaid .amt{color:var(--green);}
-  .calCell.someDue{background:var(--red-l); border-color:#f3c9c4;}
-  .calCell.someDue .amt{color:var(--red);}
+  .calCell.allDue{background:var(--red-l); border-color:#f3c9c4;}
+  .calCell.mixed{background:#fff;}
+  .calCell .paidAmt{font-size:9px; color:var(--green); font-weight:800; line-height:1.15;}
+  .calCell .dueAmt{font-size:9px; color:var(--red); font-weight:800; line-height:1.15;}
   .calLegend{display:flex; gap:14px; justify-content:center; margin-top:12px; font-size:11px; color:var(--muted);}
   .calLegend span{display:flex; align-items:center; gap:5px;}
   .calLegend i{width:11px; height:11px; border-radius:3px; display:inline-block; border:1px solid var(--border);}
@@ -1482,11 +1484,13 @@
     var y = parseInt(parts[0],10), m = parseInt(parts[1],10);
     $("monthLabelCal").textContent = monthLabel(state.calMonth);
 
-    var dayTotals = {}, dayDue = {};
+    var dayTotals = {}, dayPaid = {}, dayDue = {};
     entries.forEach(function(e){
       if (e.type === "expense" && monthKey(e.date) === state.calMonth){
-        dayTotals[e.date] = (dayTotals[e.date] || 0) + e.amount;
-        if (!e.paid) dayDue[e.date] = true;
+        var a = Number(e.amount) || 0;
+        dayTotals[e.date] = (dayTotals[e.date] || 0) + a;
+        if (e.paid) dayPaid[e.date] = (dayPaid[e.date] || 0) + a;
+        else dayDue[e.date] = (dayDue[e.date] || 0) + a;
       }
     });
 
@@ -1507,18 +1511,25 @@
       var dstr = y+"-"+pad(m)+"-"+pad(day);
       var amt = dayTotals[dstr] || 0;
       var isToday = dstr === today;
+      var paidAmt = dayPaid[dstr] || 0, dueAmt = dayDue[dstr] || 0;
       var cls = "calCell";
       if (isToday) cls += " today";
+      var inner = '<div class="d">'+day+'</div>';
       if (amt > 0){
-        cls += " has " + (dayDue[dstr] ? "someDue" : "allPaid");
+        cls += " has ";
+        if (dueAmt === 0) cls += "allPaid";
+        else if (paidAmt === 0) cls += "allDue";
+        else cls += "mixed";
+        if (paidAmt > 0) inner += '<div class="paidAmt">'+Math.round(paidAmt)+'€</div>';
+        if (dueAmt > 0)  inner += '<div class="dueAmt">'+Math.round(dueAmt)+'€</div>';
       }
-      html += '<div class="'+cls+'" data-date="'+dstr+'"><div class="d">'+day+'</div>'+(amt>0 ? '<div class="amt">'+Math.round(amt)+'€</div>' : '')+'</div>';
+      html += '<div class="'+cls+'" data-date="'+dstr+'">'+inner+'</div>';
     }
     $("calGrid").innerHTML = html;
 
     $("calLegend").innerHTML =
-      '<span><i style="background:var(--green-l); border-color:#bfe3c4;"></i>όλα πληρωμένα</span>'+
-      '<span><i style="background:var(--red-l); border-color:#f3c9c4;"></i>εκκρεμεί πληρωμή</span>';
+      '<span><i style="background:var(--green-l); border-color:#bfe3c4;"></i>πληρωμένα</span>'+
+      '<span><i style="background:var(--red-l); border-color:#f3c9c4;"></i>εκκρεμότητα</span>';
 
     Array.prototype.forEach.call($("calGrid").querySelectorAll(".calCell[data-date]"), function(cell){
       cell.addEventListener("click", function(){
@@ -2511,7 +2522,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=22').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=23').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
