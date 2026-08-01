@@ -185,6 +185,15 @@
   .paySummary .todo{background:var(--red-l); color:var(--red);}
   .paySummary b{display:block; font-size:15px; font-weight:800;}
   .payHint{font-size:12px; color:var(--muted); margin:-4px 0 12px 2px;}
+  .availBox{
+    background:#fff; border:2px solid var(--green); border-radius:14px;
+    padding:14px; text-align:center; margin-bottom:14px;
+  }
+  .availBox.negative{border-color:var(--red);}
+  .availBox .v{font-size:26px; font-weight:800; color:var(--green); line-height:1.2;}
+  .availBox.negative .v{color:var(--red);}
+  .availBox .l{font-size:12px; color:var(--muted); margin-top:2px; font-weight:600;}
+  .availBox .sub{font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4;}
   .barChartRow.clickable{cursor:pointer; border-radius:8px;}
   .barChartRow.clickable:hover{background:#f4f6fb;}
   .barChartRow.clickable:active{opacity:.7;}
@@ -320,6 +329,12 @@
       <div class="statRow">
         <div class="stat income"><div class="v" id="dIncome">0,00 €</div><div class="l">Έσοδα μήνα</div></div>
         <div class="stat expense"><div class="v" id="dExpense">0,00 €</div><div class="l">Έξοδα μήνα</div></div>
+      </div>
+
+      <div class="availBox" id="availBox">
+        <div class="v" id="dAvail">0,00 €</div>
+        <div class="l">Διαθέσιμα σήμερα</div>
+        <div class="sub" id="dAvailSub">—</div>
       </div>
 
       <div class="bigNet">
@@ -1347,7 +1362,30 @@
       (includeFuture ? (cutoffMonth ? " έως τέλος " + monthLabel(cutoffMonth) : " (όλες οι μελλοντικές)") : " (έως τέλος τρέχοντος μήνα)");
     $("dCumul").textContent = money(cumulativeSince(refDate, includeFuture, cutoffMonth));
 
+    renderAvailable();
     renderPayments();
+  }
+
+  /* Διαθέσιμα σήμερα: έσοδα που έχουν ήδη μπει μείον όσα έχεις σημειώσει πληρωμένα.
+     Έχει νόημα μόνο για τον τρέχοντα μήνα, οπότε αλλού κρύβεται. */
+  function renderAvailable(){
+    var box = $("availBox");
+    var thisMonth = todayStr().slice(0,7);
+    if (state.dashMonth !== thisMonth){ box.classList.add("hidden"); return; }
+    box.classList.remove("hidden");
+
+    var today = todayStr();
+    var got = 0, spent = 0;
+    entries.forEach(function(e){
+      if (monthKey(e.date) !== thisMonth) return;
+      var a = Number(e.amount) || 0;
+      if (e.type === "income"){ if (e.date <= today) got += a; }
+      else if (e.paid) spent += a;
+    });
+    var avail = got - spent;
+    $("dAvail").textContent = money(avail);
+    box.classList.toggle("negative", avail < 0);
+    $("dAvailSub").textContent = "έσοδα " + money(got) + " − πληρωμένα " + money(spent);
   }
 
   /* Συμπληρώνει πεδία που λείπουν σε παλιές καταχωρήσεις.
@@ -2620,7 +2658,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=26').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=27').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
