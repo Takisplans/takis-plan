@@ -203,6 +203,20 @@
   .calCell .d{font-size:10px; color:var(--muted); font-weight:600;}
   .calCell .amt{font-size:9px; color:var(--red); font-weight:800; margin-top:2px; text-align:center;}
   .calCell.today{border-color:var(--accent); border-width:2px;}
+  .calCell.has{cursor:pointer;}
+  /* Πράσινο μόνο όταν έχουν κλείσει όλα· κόκκινο αν μένει έστω ένα. */
+  .calCell.allPaid{background:var(--green-l); border-color:#bfe3c4;}
+  .calCell.allPaid .amt{color:var(--green);}
+  .calCell.someDue{background:var(--red-l); border-color:#f3c9c4;}
+  .calCell.someDue .amt{color:var(--red);}
+  .calLegend{display:flex; gap:14px; justify-content:center; margin-top:12px; font-size:11px; color:var(--muted);}
+  .calLegend span{display:flex; align-items:center; gap:5px;}
+  .calLegend i{width:11px; height:11px; border-radius:3px; display:inline-block; border:1px solid var(--border);}
+  .dayTot{display:flex; gap:8px; margin:2px 0 14px;}
+  .dayTot div{flex:1; border-radius:10px; padding:9px; text-align:center; font-size:12px;}
+  .dayTot .done{background:var(--green-l); color:var(--green);}
+  .dayTot .todo{background:var(--red-l); color:var(--red);}
+  .dayTot b{display:block; font-size:15px; font-weight:800;}
 
   /* ---------- Settings ---------- */
   .settingsBtn{
@@ -414,6 +428,7 @@
 
       <div class="card">
         <div class="calGrid" id="calGrid"></div>
+        <div class="calLegend" id="calLegend"></div>
       </div>
     </section>
 
@@ -1467,10 +1482,11 @@
     var y = parseInt(parts[0],10), m = parseInt(parts[1],10);
     $("monthLabelCal").textContent = monthLabel(state.calMonth);
 
-    var dayTotals = {};
+    var dayTotals = {}, dayDue = {};
     entries.forEach(function(e){
       if (e.type === "expense" && monthKey(e.date) === state.calMonth){
         dayTotals[e.date] = (dayTotals[e.date] || 0) + e.amount;
+        if (!e.paid) dayDue[e.date] = true;
       }
     });
 
@@ -1491,9 +1507,83 @@
       var dstr = y+"-"+pad(m)+"-"+pad(day);
       var amt = dayTotals[dstr] || 0;
       var isToday = dstr === today;
-      html += '<div class="calCell'+(isToday?' today':'')+'"><div class="d">'+day+'</div>'+(amt>0 ? '<div class="amt">'+Math.round(amt)+'€</div>' : '')+'</div>';
+      var cls = "calCell";
+      if (isToday) cls += " today";
+      if (amt > 0){
+        cls += " has " + (dayDue[dstr] ? "someDue" : "allPaid");
+      }
+      html += '<div class="'+cls+'" data-date="'+dstr+'"><div class="d">'+day+'</div>'+(amt>0 ? '<div class="amt">'+Math.round(amt)+'€</div>' : '')+'</div>';
     }
     $("calGrid").innerHTML = html;
+
+    $("calLegend").innerHTML =
+      '<span><i style="background:var(--green-l); border-color:#bfe3c4;"></i>όλα πληρωμένα</span>'+
+      '<span><i style="background:var(--red-l); border-color:#f3c9c4;"></i>εκκρεμεί πληρωμή</span>';
+
+    Array.prototype.forEach.call($("calGrid").querySelectorAll(".calCell[data-date]"), function(cell){
+      cell.addEventListener("click", function(){
+        openDayModal(cell.getAttribute("data-date"));
+      });
+    });
+  }
+
+  /* Άνοιγμα ημέρας: όλες οι κινήσεις της, με δυνατότητα σήμανσης πληρωμής. */
+  function openDayModal(dstr){
+    var list = entries.filter(function(e){ return e.date === dstr; })
+      .sort(function(a,b){
+        if (a.type !== b.type) return a.type === "income" ? -1 : 1;
+        return a.category.localeCompare(b.category, "el");
+      });
+    var d = dstr.split("-");
+    var title = d[2]+"/"+d[1]+"/"+d[0];
+
+    var done = 0, todo = 0, inc = 0;
+    list.forEach(function(e){
+      if (e.type === "income") inc += Number(e.amount)||0;
+      else if (e.paid) done += Number(e.amount)||0;
+      else todo += Number(e.amount)||0;
+    });
+
+    var rows = list.length ? list.map(function(e){
+      if (e.type === "income"){
+        return '<div class="entryRow"><div class="l"><span class="cat">'+escapeHtml(e.category)+'</span>'+
+          (e.note?'<span class="note">'+escapeHtml(e.note)+'</span>':'')+'</div>'+
+          '<div class="amt income">+'+money(e.amount)+'</div></div>';
+      }
+      return '<div class="payRow'+(e.paid?" paid":"")+'" data-id="'+e.id+'">'+
+        '<div class="payBox">'+(e.paid?"✓":"")+'</div>'+
+        '<div class="l"><span class="cat">'+escapeHtml(e.category)+'</span>'+
+        (e.note?'<span class="note">'+escapeHtml(e.note)+'</span>':'')+'</div>'+
+        '<div class="amt">'+money(e.amount)+'</div></div>';
+    }).join("") : '<div class="emptyMsg">Καμία κίνηση αυτή την ημέρα</div>';
+
+    openModal(
+      '<div class="modalBox" id="dayBox">'+
+      '<h3>'+title+'</h3>'+
+      (list.length ?
+        '<div class="dayTot">'+
+        '<div class="done"><b>'+money(done)+'</b>πληρωμένα</div>'+
+        '<div class="todo"><b>'+money(todo)+'</b>εκκρεμούν</div>'+
+        '</div>'+
+        (inc>0 ? '<div class="payHint">Έσοδα ημέρας: '+money(inc)+'</div>' : '') : '')+
+      '<div id="dayRows">'+rows+'</div>'+
+      '<div class="modalActions"><button class="confirm" id="dayClose">Κλείσιμο</button></div>'+
+      '</div>'
+    );
+    $("dayClose").addEventListener("click", closeModal);
+    Array.prototype.forEach.call($("dayRows").querySelectorAll(".payRow"), function(row){
+      row.addEventListener("click", function(){
+        var entry = entries.find(function(x){ return x.id === row.getAttribute("data-id"); });
+        if (!entry) return;
+        entry.paid = !entry.paid;
+        if (entry.paid) entry.confirmed = true;
+        touch(entry);
+        saveVault();
+        openDayModal(dstr);      // ξαναζωγράφισε το παράθυρο
+        renderCalendar();
+        renderDashboard();
+      });
+    });
   }
 
   function last6Months(){
@@ -2421,7 +2511,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=21').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=22').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
