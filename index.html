@@ -146,6 +146,13 @@
   .entryRow .amt{font-weight:800; font-size:15px;}
   .entryRow .amt.income{color:var(--green);}
   .entryRow .amt.expense{color:var(--red);}
+  .entryRow.paidRow{background:var(--green-l); border-color:#c3e3c6;}
+  .entryRow.paidRow .amt.expense{color:var(--green);}
+  .histBox{
+    width:20px; height:20px; border-radius:6px; border:2px solid #ccd3e0; background:#fff;
+    flex:none; margin-right:10px; padding:0; font-size:12px; line-height:1; color:#fff; cursor:pointer;
+  }
+  .histBox.paid{background:var(--green); border-color:var(--green);}
   .entryRow .del{background:none; border:none; color:#c2c8d6; font-size:18px; padding:4px 6px; margin-left:8px;}
   .entryRow .editBtn{background:none; border:none; color:var(--accent); font-size:16px; padding:4px 6px; margin-left:4px;}
   .emptyMsg{text-align:center; color:var(--muted); font-size:14px; padding:30px 10px;}
@@ -1454,10 +1461,30 @@
     var days = Object.keys(byDay).sort().reverse();
     box.innerHTML = days.map(function(d){
       var rows = byDay[d].map(function(e){
-        return '<div class="entryRow"><div class="l"><span class="cat">'+escapeHtml(e.category)+'</span>'+(e.note?'<span class="note">'+escapeHtml(e.note)+'</span>':'')+'</div><div style="display:flex;align-items:center;"><div class="amt '+e.type+'">'+(e.type==="income"?"+":"-")+money(e.amount)+'</div><button class="editBtn" data-id="'+e.id+'">✎</button><button class="del" data-id="'+e.id+'">✕</button></div></div>';
+        var isExp = e.type === "expense";
+        /* Στα έξοδα μπαίνει κουτάκι πληρωμής: δείχνει την κατάσταση και την αλλάζει. */
+        var box = isExp
+          ? '<button class="histBox'+(e.paid?" paid":"")+'" data-toggle="'+e.id+'" title="'+(e.paid?"Πληρωμένο":"Εκκρεμεί")+'">'+(e.paid?"✓":"")+'</button>'
+          : '';
+        return '<div class="entryRow'+(isExp && e.paid ? " paidRow" : "")+'">'+box+
+          '<div class="l"><span class="cat">'+escapeHtml(e.category)+'</span>'+(e.note?'<span class="note">'+escapeHtml(e.note)+'</span>':'')+'</div>'+
+          '<div style="display:flex;align-items:center;"><div class="amt '+e.type+'">'+(e.type==="income"?"+":"-")+money(e.amount)+'</div>'+
+          '<button class="editBtn" data-id="'+e.id+'">✎</button><button class="del" data-id="'+e.id+'">✕</button></div></div>';
       }).join("");
       return '<div class="dayGroup"><div class="dh">'+d.split("-").reverse().join("/")+'</div>'+rows+'</div>';
     }).join("");
+    box.querySelectorAll(".histBox").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var entry = entries.find(function(x){ return x.id === btn.getAttribute("data-toggle"); });
+        if (!entry) return;
+        entry.paid = !entry.paid;
+        if (entry.paid) entry.confirmed = true;
+        touch(entry);
+        saveVault();
+        renderHistory();
+        renderDashboard();
+      });
+    });
     box.querySelectorAll(".del").forEach(function(btn){
       btn.addEventListener("click", function(){
         var id = btn.getAttribute("data-id");
@@ -2522,7 +2549,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=23').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=24').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
