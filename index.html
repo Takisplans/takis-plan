@@ -685,6 +685,10 @@
   /* Συσκευές "requester" (PC) δεν αποθηκεύουν ΤΙΠΟΤΑ στον δίσκο — μόνο στη μνήμη. */
   var memSalt = null, memPwWrap = null, memVault = null, memVaultUpdated = null;
   function isRequester(){ return localStorage.getItem(ROLE_KEY) === "requester"; }
+  function wipeLocalVault(){
+    [VAULT_KEY, SALT_KEY, PWWRAP_KEY, BIOWRAP_KEY, BIOCRED_KEY, VAULT_UPDATED_KEY]
+      .forEach(function(k){ localStorage.removeItem(k); });
+  }
   function curSalt(){ return isRequester() ? memSalt : localStorage.getItem(SALT_KEY); }
   function curPwWrap(){ return isRequester() ? memPwWrap : localStorage.getItem(PWWRAP_KEY); }
   function curVault(){ return isRequester() ? (memVault ? JSON.stringify(memVault) : null) : localStorage.getItem(VAULT_KEY); }
@@ -754,6 +758,9 @@
     }
   }
   function boot(){
+    /* Συσκευή που ζητά έγκριση δεν επιτρέπεται να κρατά τίποτα στον δίσκο.
+       Καθάρισε τυχόν υπολείμματα (π.χ. δοκιμαστικό vault από παλιότερα). */
+    if (isRequester() && syncEnabled()) wipeLocalVault();
     /* Παλιοί χρήστες: δώσε αρχική χρονοσήμανση στο υπάρχον vault ώστε να μη
        θεωρηθεί "παλιότερο" από ένα άδειο απομακρυσμένο αντίγραφο. */
     if (!isRequester() && localStorage.getItem(VAULT_KEY) && !localStorage.getItem(VAULT_UPDATED_KEY)){
@@ -1936,6 +1943,8 @@
         localStorage.setItem(GIST_ID_KEY, id);
         localStorage.setItem(ROLE_KEY, chosen);
         if (nm) localStorage.setItem(DEVNAME_KEY, nm);
+        /* Ρόλος "ζητά έγκριση" => καμία τοπική αποθήκευση, ούτε υπολείμματα. */
+        if (chosen === "requester") wipeLocalVault();
         closeModal();
         alert("Ο συγχρονισμός ρυθμίστηκε. Η εφαρμογή θα ξεκινήσει ξανά.");
         location.reload();
@@ -2219,7 +2228,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=16').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=17').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
