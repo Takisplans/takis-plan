@@ -1,5 +1,5 @@
 // Bump CACHE_NAME on every release so old caches get cleared and clients pick up new files.
-const CACHE_NAME = 'takisplan-cache-v15';
+const CACHE_NAME = 'takisplan-cache-v16';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -19,6 +19,9 @@ self.addEventListener('activate', (event) => {
 // so updates show up immediately instead of waiting on GitHub Pages' CDN cache headers.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // Never touch cross-origin traffic (GitHub API sync calls) — let it go straight
+  // to the network, uncached. Caching those would serve stale vault data.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     fetch(event.request, { cache: 'reload' })
       .then((res) => {

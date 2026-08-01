@@ -196,6 +196,19 @@
   .modalActions .confirm{background:var(--navy); color:#fff;}
   .modalActions .confirm.danger{background:var(--red);}
   .modalActions .confirm:disabled{opacity:.6;}
+  /* ---- Sync / pairing ---- */
+  .pairCode{font-size:34px; font-weight:800; letter-spacing:7px; text-align:center; margin:16px 0 10px; color:var(--navy); font-variant-numeric:tabular-nums;}
+  .waitNote{font-size:13px; color:var(--muted); text-align:center; line-height:1.5; margin:0 0 10px;}
+  .waitTimer{font-size:12px; color:var(--muted); text-align:center; margin-bottom:10px;}
+  .syncRow{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); margin:-2px 0 12px 2px;}
+  .syncDot{width:9px; height:9px; border-radius:50%; background:#c8cede; flex:none;}
+  .syncDot.ok{background:var(--green);}
+  .syncDot.busy{background:#e8a33d;}
+  .syncDot.err{background:var(--red);}
+  .roleSeg{display:flex; gap:8px; margin:10px 0 4px;}
+  .roleSeg button{flex:1; padding:11px 8px; border-radius:10px; border:2px solid #dfe4ef; background:#fff; font-size:13px; font-weight:700; color:var(--muted); cursor:pointer; line-height:1.35;}
+  .roleSeg button.active{border-color:var(--navy); color:var(--navy); background:#f2f5fc;}
+  .modalBox input[type=text],.modalBox input[type=password]{width:100%; padding:12px; border-radius:10px; border:1px solid #dfe4ef; font-size:15px; margin:8px 0; box-sizing:border-box;}
 </style>
 </head>
 <body>
@@ -216,6 +229,20 @@
 
     <div class="lockErr" id="lockErr"></div>
     <div class="lockHint">Τα δεδομένα σου κρυπτογραφούνται (AES-256) με κλειδί που παράγεται από τον κωδικό ή το βιομετρικό σου και μένουν μόνο στη συσκευή σου.</div>
+    <button class="linkBtn" id="syncSetupLink" style="margin-top:14px;">☁️ Ρυθμίσεις συγχρονισμού</button>
+  </div>
+
+  <!-- Waiting-for-approval card (requester devices, e.g. PC) -->
+  <div class="lockCard hidden" id="waitCard">
+    <h1>Takis Plan</h1>
+    <p class="sub" id="waitSub">Ζητείται έγκριση από το κινητό σου…</p>
+    <div class="pairCode" id="waitCode">— — — — — —</div>
+    <p class="waitNote">Άνοιξε το Takis Plan στο κινητό σου και επιβεβαίωσε ότι εμφανίζεται ο ίδιος κωδικός.</p>
+    <div class="waitTimer" id="waitTimer"></div>
+    <div class="lockErr" id="waitErr"></div>
+    <button class="lockBtn" id="waitRetry">Νέο αίτημα</button>
+    <button class="linkBtn" id="waitRecover">🆘 Δεν έχω πρόσβαση στο κινητό</button>
+    <button class="linkBtn" id="waitSyncSettings">☁️ Ρυθμίσεις συγχρονισμού</button>
   </div>
 </div>
 
@@ -406,6 +433,15 @@
       </div>
 
       <div class="card">
+        <h2>☁️ Συγχρονισμός συσκευών</h2>
+        <div class="syncRow"><span class="syncDot" id="syncDot"></span><span id="syncStatusText">Δεν έχει ρυθμιστεί</span></div>
+        <p class="secNote" id="syncRoleText"></p>
+        <button class="settingsBtn" id="syncNowBtn">🔄 Συγχρονισμός τώρα</button>
+        <button class="settingsBtn" id="syncSetupBtn">⚙️ Ρυθμίσεις συγχρονισμού</button>
+        <button class="settingsBtn danger hidden" id="syncOffBtn">🚫 Αποσύνδεση από τον συγχρονισμό</button>
+      </div>
+
+      <div class="card">
         <h2>Αντίγραφο ασφαλείας</h2>
         <button class="settingsBtn" id="backupExportBtn">💾 Δημιουργία αντιγράφου ασφαλείας</button>
         <div class="backupMeta" id="lastBackupLabel">Δεν έχει γίνει ακόμα αντίγραφο ασφαλείας</div>
@@ -453,6 +489,21 @@
   var DEFAULT_REF = "2026-07-01";
   var IDLE_LIMIT_MS = 5 * 60 * 1000;
   var PRF_INFO = "TakisPlanBiometricUnlockV1";
+
+  /* ---- Cloud sync (private GitHub Gist) ---- */
+  var GH_TOKEN_KEY = "tp_gh_token_v1";
+  var GIST_ID_KEY = "tp_gist_id_v1";
+  var ROLE_KEY = "tp_role_v1";              // "approver" (κινητό) | "requester" (PC)
+  var DEVNAME_KEY = "tp_devname_v1";
+  var VAULT_UPDATED_KEY = "tp_vault_updated_v1";
+  var LAST_SYNC_KEY = "tp_lastsync_v1";
+  var HIDDEN_AT_KEY = "tp_hidden_at_v1";
+  var GIST_DESC = "TakisPlan Sync Vault — μη το διαγράψεις";
+  var VAULT_FILE = "vault.json";
+  var PAIR_FILE = "pair.json";
+  var REQ_TTL_MS = 3 * 60 * 1000;           // αίτημα έγκρισης λήγει σε 3 λεπτά
+  var PAIR_POLL_MS = 4000;
+  var BACKGROUND_GRACE_MS = 2 * 60 * 1000;  // κλείδωμα μόνο αν μείνει κρυφό >2 λεπτά
 
   function money(n){
     n = Number(n)||0;
@@ -631,10 +682,24 @@
   function hasBiometric(){
     return !!(localStorage.getItem(BIOWRAP_KEY) && localStorage.getItem(BIOCRED_KEY));
   }
+  /* Συσκευές "requester" (PC) δεν αποθηκεύουν ΤΙΠΟΤΑ στον δίσκο — μόνο στη μνήμη. */
+  var memSalt = null, memPwWrap = null, memVault = null, memVaultUpdated = null;
+  function isRequester(){ return localStorage.getItem(ROLE_KEY) === "requester"; }
+  function curSalt(){ return isRequester() ? memSalt : localStorage.getItem(SALT_KEY); }
+  function curPwWrap(){ return isRequester() ? memPwWrap : localStorage.getItem(PWWRAP_KEY); }
+  function curVault(){ return isRequester() ? (memVault ? JSON.stringify(memVault) : null) : localStorage.getItem(VAULT_KEY); }
+  function curUpdated(){ return isRequester() ? memVaultUpdated : localStorage.getItem(VAULT_UPDATED_KEY); }
+
   function saveVault(){
     if (!sessionKey) return Promise.resolve();
     return encryptObj(sessionKey, { entries: entries, refDate: refDate }).then(function(payload){
-      localStorage.setItem(VAULT_KEY, JSON.stringify(payload));
+      var stamp = new Date().toISOString();
+      memVault = payload; memVaultUpdated = stamp;
+      if (!isRequester()){
+        localStorage.setItem(VAULT_KEY, JSON.stringify(payload));
+        localStorage.setItem(VAULT_UPDATED_KEY, stamp);
+      }
+      cloudPushSoon();
     });
   }
 
@@ -688,9 +753,35 @@
       useBioLink.classList.add("hidden");
     }
   }
-  setupLockUI();
+  function boot(){
+    /* Παλιοί χρήστες: δώσε αρχική χρονοσήμανση στο υπάρχον vault ώστε να μη
+       θεωρηθεί "παλιότερο" από ένα άδειο απομακρυσμένο αντίγραφο. */
+    if (!isRequester() && localStorage.getItem(VAULT_KEY) && !localStorage.getItem(VAULT_UPDATED_KEY)){
+      localStorage.setItem(VAULT_UPDATED_KEY, new Date().toISOString());
+    }
+    if (cryptoAvailable && isRequester() && syncEnabled()){
+      startRequesterFlow();
+    } else {
+      setupLockUI();
+    }
+  }
   usePasswordLink.addEventListener("click", showPasswordView);
   useBioLink.addEventListener("click", function(){ showBiometricView(false); });
+  $("syncSetupLink").addEventListener("click", openSyncSetupModal);
+  $("waitSyncSettings").addEventListener("click", openSyncSetupModal);
+  $("waitRetry").addEventListener("click", startRequesterFlow);
+  $("waitRecover").addEventListener("click", function(){
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>🆘 Ανάκτηση χωρίς το κινητό</h3>'+
+      '<p style="color:var(--muted); font-size:13px;">Αν έχασες ή χάλασε το κινητό σου, φόρτωσε ένα αρχείο αντιγράφου ασφαλείας και δώσε τον κωδικό του. Τότε αυτή η συσκευή γίνεται η συσκευή που κρατά το κλειδί και δεν θα ζητά πλέον έγκριση.</p>'+
+      '<div class="modalActions"><button class="cancel" id="recCancel">Άκυρο</button><button class="confirm" id="recPick">Επιλογή αρχείου</button></div>'+
+      '</div>'
+    );
+    $("recCancel").addEventListener("click", closeModal);
+    $("recPick").addEventListener("click", function(){ $("importFile").click(); });
+  });
+  $("importFile").addEventListener("change", handleImportFile);
 
   function shakeErr(msg){
     lockErr.textContent = msg;
@@ -707,6 +798,8 @@
     pw1.value = ""; pw2.value = "";
     initAppUI();
     processPendingConfirmations();
+    syncOnUnlock();
+    startApproverWatch();
   }
 
   bioBtn.addEventListener("click", function(){
@@ -815,9 +908,21 @@
   });
 
   /* ---- Auto re-lock: background / idle ---- */
+  /* Στο κινητό κλειδώνει αμέσως μόλις φύγεις από την εφαρμογή. Σε υπολογιστή
+     αυτό θα σήμαινε νέα έγκριση σε κάθε alt-tab, οπότε δίνουμε περιθώριο. */
+  var isDesktop = !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
   document.addEventListener("visibilitychange", function(){
-    if (document.hidden && appUnlocked){
-      location.reload();
+    if (!appUnlocked) return;
+    if (document.hidden){
+      if (!isDesktop){ location.reload(); return; }
+      sessionStorage.setItem(HIDDEN_AT_KEY, String(Date.now()));
+    } else if (isDesktop){
+      var t = parseInt(sessionStorage.getItem(HIDDEN_AT_KEY) || "0", 10);
+      sessionStorage.removeItem(HIDDEN_AT_KEY);
+      if (t && Date.now() - t > BACKGROUND_GRACE_MS){ location.reload(); return; }
+      if (syncEnabled() && sessionKey){
+        cloudPull().then(function(changed){ if (changed) refreshAllViews(); }).catch(function(){});
+      }
     }
   });
   var idleTimer = null;
@@ -1031,10 +1136,18 @@
     $("lockNowBtn").addEventListener("click", function(){ location.reload(); });
     $("backupExportBtn").addEventListener("click", doExportBackup);
     $("backupImportBtn").addEventListener("click", function(){ $("importFile").click(); });
-    $("importFile").addEventListener("change", handleImportFile);
     $("bioEnableBtn").addEventListener("click", onEnableBiometric);
     $("bioDisableBtn").addEventListener("click", onDisableBiometric);
+    $("syncSetupBtn").addEventListener("click", openSyncSetupModal);
+    $("syncNowBtn").addEventListener("click", function(){
+      cloudPull().then(function(changed){
+        if (changed) refreshAllViews();
+        return cloudPush();
+      }).catch(function(e){ setSyncStatus("err", e.message); });
+    });
+    $("syncOffBtn").addEventListener("click", openSyncOffModal);
 
+    renderSyncSettings();
     renderSettings();
     renderDashboard();
   }
@@ -1411,16 +1524,460 @@
         if (backupData.pwWrap) localStorage.setItem(PWWRAP_KEY, JSON.stringify(backupData.pwWrap));
         else localStorage.removeItem(PWWRAP_KEY);
         localStorage.setItem(VAULT_KEY, JSON.stringify(backupData.vault));
+        localStorage.setItem(VAULT_UPDATED_KEY, new Date().toISOString());
         localStorage.removeItem(BIOWRAP_KEY);
         localStorage.removeItem(BIOCRED_KEY);
+        /* Η επαναφορά από αντίγραφο κάνει αυτή τη συσκευή κάτοχο του κλειδιού:
+           είναι η διαδικασία ανάκτησης αν χαθεί το κινητό. */
+        var wasRequester = isRequester();
+        if (wasRequester) localStorage.setItem(ROLE_KEY, "approver");
         closeModal();
-        alert("Η επαναφορά ολοκληρώθηκε. Η εφαρμογή θα ξεκλειδώσει ξανά με τον κωδικό του αντιγράφου.");
+        alert(wasRequester
+          ? "Η επαναφορά ολοκληρώθηκε. Αυτή η συσκευή ορίστηκε ως συσκευή που εγκρίνει και δεν θα ζητά πλέον έγκριση από το κινητό."
+          : "Η επαναφορά ολοκληρώθηκε. Η εφαρμογή θα ξεκλειδώσει ξανά με τον κωδικό του αντιγράφου.");
         location.reload();
       }).catch(function(){
         $("impConfirm").disabled = false;
         $("impConfirm").textContent = "Επαναφορά";
         $("impErr").textContent = "Λάθος κωδικός αντιγράφου";
       });
+    });
+  }
+
+  /* ==========================================================================
+     CLOUD SYNC + PAIRING  (ιδιωτικό GitHub Gist)
+     - Το vault ανεβαίνει ΗΔΗ κρυπτογραφημένο (AES-256-GCM). Το GitHub βλέπει
+       μόνο άχρηστα bytes· το κλειδί δεν φεύγει ποτέ από τις συσκευές σου.
+     - Ο "approver" (κινητό) κρατά το κλειδί. Ο "requester" (PC) ζητά έγκριση
+       σε κάθε άνοιγμα και δεν αποθηκεύει τίποτα τοπικά.
+     ========================================================================== */
+
+  function ghToken(){ return localStorage.getItem(GH_TOKEN_KEY) || ""; }
+  function gistId(){ return localStorage.getItem(GIST_ID_KEY) || ""; }
+  function syncEnabled(){ return !!(ghToken() && gistId()); }
+  function deviceName(){
+    var n = localStorage.getItem(DEVNAME_KEY);
+    if (n) return n;
+    return /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? "Κινητό" : "Υπολογιστής";
+  }
+
+  function ghApi(path, opts){
+    opts = opts || {};
+    var headers = {
+      "Authorization": "Bearer " + ghToken(),
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    };
+    if (opts.body) headers["Content-Type"] = "application/json";
+    return fetch("https://api.github.com" + path, {
+      method: opts.method || "GET",
+      headers: headers,
+      body: opts.body,
+      cache: "no-store"
+    }).then(function(r){
+      if (r.status === 401) throw new Error("Το GitHub token δεν είναι έγκυρο ή έληξε.");
+      if (r.status === 403) throw new Error("Το token δεν έχει δικαίωμα στα gists.");
+      if (r.status === 404) throw new Error("Δεν βρέθηκε το gist συγχρονισμού.");
+      if (!r.ok) throw new Error("Σφάλμα GitHub (" + r.status + ")");
+      return r.json();
+    });
+  }
+  function parseOrNull(t){ try { return JSON.parse(t); } catch(e){ return null; } }
+
+  function gistGet(){ return ghApi("/gists/" + gistId() + "?_=" + Date.now()); }
+  function gistFile(gist, name){
+    var f = gist && gist.files && gist.files[name];
+    if (!f) return Promise.resolve(null);
+    if (f.truncated && f.raw_url){
+      return fetch(f.raw_url, { cache:"no-store" }).then(function(r){ return r.text(); }).then(parseOrNull);
+    }
+    return Promise.resolve(parseOrNull(f.content));
+  }
+  function gistPatch(files){
+    return ghApi("/gists/" + gistId(), { method:"PATCH", body: JSON.stringify({ files: files }) });
+  }
+  function findOrCreateGist(){
+    return ghApi("/gists?per_page=100&_=" + Date.now()).then(function(list){
+      for (var i=0;i<list.length;i++){
+        if (list[i].description === GIST_DESC) return list[i].id;
+      }
+      return ghApi("/gists", { method:"POST", body: JSON.stringify({
+        description: GIST_DESC,
+        "public": false,
+        files: (function(){
+          var f = {};
+          f[VAULT_FILE] = { content: JSON.stringify({ v:1, app:"TakisPlan", updatedAt:null }) };
+          f[PAIR_FILE]  = { content: JSON.stringify({ requests:[], responses:[] }) };
+          return f;
+        })()
+      })}).then(function(g){ return g.id; });
+    });
+  }
+
+  /* ---- Ένδειξη κατάστασης ---- */
+  var syncState = "idle", syncMsg = "";
+  function setSyncStatus(st, msg){
+    syncState = st; syncMsg = msg || "";
+    var dot = $("syncDot"), txt = $("syncStatusText");
+    if (!dot || !txt) return;
+    dot.className = "syncDot " + (st === "idle" ? "" : st);
+    if (!syncEnabled()){ txt.textContent = "Δεν έχει ρυθμιστεί"; return; }
+    if (st === "busy"){ txt.textContent = "Συγχρονισμός…"; return; }
+    if (st === "err"){ txt.textContent = "Σφάλμα: " + syncMsg; return; }
+    var ls = localStorage.getItem(LAST_SYNC_KEY);
+    if (!ls){ txt.textContent = "Συνδεδεμένο"; return; }
+    var d = new Date(ls);
+    txt.textContent = "Τελευταίος συγχρονισμός: " + pad(d.getDate())+"/"+pad(d.getMonth()+1)+" "+pad(d.getHours())+":"+pad(d.getMinutes());
+  }
+
+  /* ---- Push / Pull ---- */
+  var pushTimer = null;
+  function cloudPushSoon(){
+    if (!syncEnabled()) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(function(){
+      cloudPush().catch(function(e){ setSyncStatus("err", e.message); });
+    }, 1200);
+  }
+  function cloudPush(){
+    if (!syncEnabled() || !sessionKey) return Promise.resolve();
+    var salt = curSalt(), vault = curVault(), pwWrap = curPwWrap();
+    if (!salt || !vault) return Promise.resolve();
+    setSyncStatus("busy");
+    var stamp = curUpdated();
+    if (!stamp){
+      stamp = new Date().toISOString();
+      if (isRequester()) memVaultUpdated = stamp;
+      else localStorage.setItem(VAULT_UPDATED_KEY, stamp);
+    }
+    var payload = {
+      v: 1, app: "TakisPlan",
+      updatedAt: stamp,
+      device: deviceName(),
+      salt: salt,
+      pwWrap: pwWrap ? JSON.parse(pwWrap) : null,
+      vault: JSON.parse(vault)
+    };
+    var files = {}; files[VAULT_FILE] = { content: JSON.stringify(payload) };
+    return gistPatch(files).then(function(){
+      localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+      setSyncStatus("ok");
+    });
+  }
+  /* Νικάει το πιο πρόσφατο (last-write-wins) */
+  function cloudPull(){
+    if (!syncEnabled() || !sessionKey) return Promise.resolve(false);
+    setSyncStatus("busy");
+    return gistGet().then(function(g){ return gistFile(g, VAULT_FILE); }).then(function(remote){
+      if (!remote || !remote.updatedAt || !remote.vault){ setSyncStatus("ok"); return false; }
+      var local = curUpdated();
+      if (local && local >= remote.updatedAt){ setSyncStatus("ok"); return false; }
+      return decryptObj(sessionKey, remote.vault).then(function(data){
+        entries = data.entries || [];
+        refDate = data.refDate || DEFAULT_REF;
+        memVault = remote.vault; memVaultUpdated = remote.updatedAt;
+        if (remote.salt) memSalt = remote.salt;
+        if (remote.pwWrap) memPwWrap = JSON.stringify(remote.pwWrap);
+        if (!isRequester()){
+          localStorage.setItem(VAULT_KEY, JSON.stringify(remote.vault));
+          localStorage.setItem(VAULT_UPDATED_KEY, remote.updatedAt);
+        }
+        localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+        setSyncStatus("ok");
+        return true;
+      });
+    });
+  }
+  function refreshAllViews(){
+    try { renderDashboard(); } catch(e){}
+    try { renderHistory(); } catch(e){}
+    try { renderCalendar(); } catch(e){}
+    try { renderCharts(); } catch(e){}
+  }
+  function syncOnUnlock(){
+    if (!syncEnabled()) return;
+    cloudPull().then(function(changed){
+      if (changed) refreshAllViews();
+      return cloudPush();
+    }).catch(function(e){ setSyncStatus("err", e.message); });
+  }
+
+  /* ---- ECDH: παράδοση κλειδιού από το κινητό στο PC ---- */
+  function genEcdh(){
+    return crypto.subtle.generateKey({ name:"ECDH", namedCurve:"P-256" }, true, ["deriveBits"]);
+  }
+  function exportPub(key){
+    return crypto.subtle.exportKey("raw", key).then(function(b){ return bytesToBase64(new Uint8Array(b)); });
+  }
+  function sharedAesKey(privKey, pubB64){
+    return crypto.subtle.importKey("raw", base64ToBytes(pubB64), { name:"ECDH", namedCurve:"P-256" }, false, [])
+      .then(function(pub){ return crypto.subtle.deriveBits({ name:"ECDH", "public": pub }, privKey, 256); })
+      .then(function(bits){ return crypto.subtle.digest("SHA-256", bits); })
+      .then(function(h){ return crypto.subtle.importKey("raw", h, { name:"AES-GCM" }, false, ["encrypt","decrypt"]); });
+  }
+  /* Ο 6ψήφιος κωδικός παράγεται από το δημόσιο κλειδί -> οι δύο συσκευές τον
+     υπολογίζουν ανεξάρτητα. Αν ταιριάζει, δεν παρεμβάλλεται κανείς. */
+  function codeFromPub(pubB64){
+    return crypto.subtle.digest("SHA-256", base64ToBytes(pubB64)).then(function(h){
+      var b = new Uint8Array(h);
+      var n = ((b[0]<<16) | (b[1]<<8) | b[2]) % 1000000;
+      return ("000000" + n).slice(-6);
+    });
+  }
+  function readPair(){
+    return gistGet().then(function(g){ return gistFile(g, PAIR_FILE); }).then(function(p){
+      p = p || {};
+      var now = Date.now();
+      p.requests  = (p.requests  || []).filter(function(r){ return now - r.ts < REQ_TTL_MS; });
+      p.responses = (p.responses || []).filter(function(r){ return now - r.ts < REQ_TTL_MS; });
+      return p;
+    });
+  }
+  function writePair(p){
+    var files = {}; files[PAIR_FILE] = { content: JSON.stringify(p) };
+    return gistPatch(files);
+  }
+
+  /* ---------- Πλευρά PC (requester) ---------- */
+  var pairKeys = null, pairReqId = null, pairPoll = null, pairDeadline = 0;
+
+  function showWaitCard(){
+    $("lockScreen").classList.remove("hidden");
+    document.querySelector("#lockScreen .lockCard").classList.add("hidden");
+    $("waitCard").classList.remove("hidden");
+  }
+  function stopPairPoll(){ if (pairPoll){ clearInterval(pairPoll); pairPoll = null; } }
+
+  function startRequesterFlow(){
+    showWaitCard();
+    $("waitErr").textContent = "";
+    $("waitRetry").classList.add("hidden");
+    $("waitSub").textContent = "Ζητείται έγκριση από το κινητό σου…";
+    $("waitCode").textContent = "— — —";
+    stopPairPoll();
+    pairReqId = uid() + uid();
+    genEcdh().then(function(kp){
+      pairKeys = kp;
+      return exportPub(kp.publicKey);
+    }).then(function(pub){
+      return codeFromPub(pub).then(function(code){
+        $("waitCode").textContent = code.slice(0,3) + " " + code.slice(3);
+        return readPair().then(function(p){
+          p.requests.push({ id: pairReqId, pub: pub, device: deviceName(), ts: Date.now() });
+          return writePair(p);
+        });
+      });
+    }).then(function(){
+      pairDeadline = Date.now() + REQ_TTL_MS;
+      tickWait();
+      pairPoll = setInterval(function(){ tickWait(); checkForApproval(); }, PAIR_POLL_MS);
+    }).catch(function(e){
+      $("waitErr").textContent = e.message;
+      $("waitRetry").classList.remove("hidden");
+    });
+  }
+  function tickWait(){
+    var left = Math.max(0, pairDeadline - Date.now());
+    if (left <= 0){
+      stopPairPoll();
+      $("waitTimer").textContent = "";
+      $("waitSub").textContent = "Το αίτημα έληξε.";
+      $("waitErr").textContent = "Δεν δόθηκε έγκριση εγκαίρως.";
+      $("waitRetry").classList.remove("hidden");
+      return;
+    }
+    var s = Math.ceil(left/1000);
+    $("waitTimer").textContent = "Λήγει σε " + Math.floor(s/60) + ":" + pad(s%60);
+  }
+  function checkForApproval(){
+    readPair().then(function(p){
+      var resp = null;
+      for (var i=0;i<p.responses.length;i++){ if (p.responses[i].id === pairReqId) resp = p.responses[i]; }
+      if (!resp) return;
+      stopPairPoll();
+      if (!resp.ok){
+        $("waitSub").textContent = "Το αίτημα απορρίφθηκε.";
+        $("waitTimer").textContent = "";
+        $("waitErr").textContent = "Δεν δόθηκε πρόσβαση από το κινητό.";
+        $("waitRetry").classList.remove("hidden");
+        return;
+      }
+      $("waitSub").textContent = "Εγκρίθηκε — ξεκλείδωμα…";
+      $("waitTimer").textContent = "";
+      sharedAesKey(pairKeys.privateKey, resp.epub).then(function(k){
+        return decryptObj(k, resp.wrapped);
+      }).then(function(obj){
+        var mkBytes = base64ToBytes(obj.mk);
+        return importMk(mkBytes).then(function(mk){
+          sessionKey = mk; mkRawBytes = mkBytes;
+          return cloudPull();
+        });
+      }).then(function(){
+        // καθάρισμα του αιτήματος από το gist
+        readPair().then(function(p2){
+          p2.requests  = p2.requests.filter(function(r){ return r.id !== pairReqId; });
+          p2.responses = p2.responses.filter(function(r){ return r.id !== pairReqId; });
+          return writePair(p2);
+        }).catch(function(){});
+        $("waitCard").classList.add("hidden");
+        unlockApp();
+        refreshAllViews();
+      }).catch(function(e){
+        $("waitErr").textContent = "Αποτυχία ξεκλειδώματος: " + e.message;
+        $("waitRetry").classList.remove("hidden");
+      });
+    }).catch(function(){});
+  }
+
+  /* ---------- Πλευρά κινητού (approver) ---------- */
+  var approverPoll = null, dismissedReqs = {};
+  function startApproverWatch(){
+    if (!syncEnabled() || isRequester()) return;
+    checkPairRequests();
+    if (approverPoll) clearInterval(approverPoll);
+    approverPoll = setInterval(checkPairRequests, PAIR_POLL_MS * 2);
+  }
+  function checkPairRequests(){
+    if (!sessionKey || !mkRawBytes) return;
+    readPair().then(function(p){
+      var answered = {};
+      p.responses.forEach(function(r){ answered[r.id] = 1; });
+      var pending = p.requests.filter(function(r){ return !answered[r.id] && !dismissedReqs[r.id]; });
+      // Μην πατήσεις πάνω σε άλλο ανοιχτό παράθυρο (π.χ. επεξεργασία καταχώρησης)
+      if (pending.length && !$("modalHost").innerHTML) showApprovalPrompt(pending[0]);
+    }).catch(function(){});
+  }
+  function showApprovalPrompt(req){
+    codeFromPub(req.pub).then(function(code){
+      openModal(
+        '<div class="modalBox" id="approveBox">'+
+        '<h3>Αίτημα πρόσβασης</h3>'+
+        '<p style="color:var(--muted); font-size:13px;">Η συσκευή <b>'+escapeHtml(req.device||"Άγνωστη")+'</b> ζητά να ανοίξει το Takis Plan. Δώσε έγκριση μόνο αν βλέπεις τον ίδιο κωδικό στην οθόνη της.</p>'+
+        '<div class="pairCode">'+code.slice(0,3)+' '+code.slice(3)+'</div>'+
+        '<div class="lockErr" id="apprErr"></div>'+
+        '<div class="modalActions"><button class="cancel" id="apprDeny">Άρνηση</button><button class="confirm" id="apprOk">Έγκριση</button></div>'+
+        '</div>'
+      );
+      $("apprDeny").addEventListener("click", function(){ respondToRequest(req, false); });
+      $("apprOk").addEventListener("click", function(){ respondToRequest(req, true); });
+    });
+  }
+  function respondToRequest(req, ok){
+    dismissedReqs[req.id] = 1;
+    var btn = $("apprOk");
+    if (btn){ btn.disabled = true; btn.textContent = ok ? "Αποστολή…" : "…"; }
+    var work;
+    if (!ok){
+      work = readPair().then(function(p){
+        p.responses.push({ id: req.id, ok:false, ts: Date.now() });
+        return writePair(p);
+      });
+    } else {
+      // πρώτα ανεβάζουμε την τρέχουσα κατάσταση, ώστε το PC να πάρει τα πιο πρόσφατα
+      work = cloudPush().then(genEcdh).then(function(kp){
+        return exportPub(kp.publicKey).then(function(epub){
+          return sharedAesKey(kp.privateKey, req.pub).then(function(k){
+            return encryptObj(k, { mk: bytesToBase64(mkRawBytes) });
+          }).then(function(wrapped){
+            return readPair().then(function(p){
+              p.responses.push({ id: req.id, ok:true, epub: epub, wrapped: wrapped, ts: Date.now() });
+              return writePair(p);
+            });
+          });
+        });
+      });
+    }
+    work.then(function(){ closeModal(); }).catch(function(e){
+      if ($("apprErr")) $("apprErr").textContent = e.message;
+      if (btn){ btn.disabled = false; btn.textContent = "Έγκριση"; }
+    });
+  }
+
+  /* ---------- Ρυθμίσεις συγχρονισμού ---------- */
+  function openSyncSetupModal(){
+    var role = localStorage.getItem(ROLE_KEY) || (/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? "approver" : "requester");
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>☁️ Ρυθμίσεις συγχρονισμού</h3>'+
+      '<p style="color:var(--muted); font-size:13px;">Τα δεδομένα αποθηκεύονται κρυπτογραφημένα σε ένα ιδιωτικό GitHub gist. Χρειάζεται ένα token με δικαίωμα <b>μόνο</b> στα gists.</p>'+
+      '<input type="password" id="syncToken" placeholder="GitHub token (ghp_… ή github_pat_…)" autocomplete="off">'+
+      '<input type="text" id="syncDevName" placeholder="Όνομα συσκευής (π.χ. Κινητό)" value="'+escapeHtml(deviceName())+'">'+
+      '<p style="color:var(--muted); font-size:13px; margin:12px 0 0;">Ρόλος αυτής της συσκευής:</p>'+
+      '<div class="roleSeg" id="roleSeg">'+
+      '<button type="button" data-role="approver" class="'+(role==="approver"?"active":"")+'">🔑 Εγκρίνει<br><span style="font-weight:500;">κρατά το κλειδί</span></button>'+
+      '<button type="button" data-role="requester" class="'+(role==="requester"?"active":"")+'">💻 Ζητά έγκριση<br><span style="font-weight:500;">δεν αποθηκεύει τίποτα</span></button>'+
+      '</div>'+
+      '<div class="lockErr" id="syncErr"></div>'+
+      '<div class="modalActions"><button class="cancel" id="syncCancel">Άκυρο</button><button class="confirm" id="syncSave">Αποθήκευση</button></div>'+
+      '</div>'
+    );
+    if (ghToken()) $("syncToken").value = ghToken();
+    var chosen = role;
+    Array.prototype.forEach.call($("roleSeg").children, function(b){
+      b.addEventListener("click", function(){
+        Array.prototype.forEach.call($("roleSeg").children, function(x){ x.classList.remove("active"); });
+        b.classList.add("active");
+        chosen = b.getAttribute("data-role");
+      });
+    });
+    $("syncCancel").addEventListener("click", closeModal);
+    $("syncSave").addEventListener("click", function(){
+      var tok = $("syncToken").value.trim();
+      var nm = $("syncDevName").value.trim();
+      if (!tok){ $("syncErr").textContent = "Γράψε το token"; return; }
+      if (chosen === "approver" && !hasVault()){
+        $("syncErr").textContent = "Αυτή η συσκευή δεν έχει τοπικά δεδομένα, άρα δεν μπορεί να εγκρίνει. Κάνε πρώτα επαναφορά από αντίγραφο ασφαλείας.";
+        return;
+      }
+      $("syncSave").disabled = true; $("syncSave").textContent = "Έλεγχος…";
+      $("syncErr").textContent = "";
+      localStorage.setItem(GH_TOKEN_KEY, tok);
+      findOrCreateGist().then(function(id){
+        localStorage.setItem(GIST_ID_KEY, id);
+        localStorage.setItem(ROLE_KEY, chosen);
+        if (nm) localStorage.setItem(DEVNAME_KEY, nm);
+        closeModal();
+        alert("Ο συγχρονισμός ρυθμίστηκε. Η εφαρμογή θα ξεκινήσει ξανά.");
+        location.reload();
+      }).catch(function(e){
+        localStorage.removeItem(GH_TOKEN_KEY);
+        $("syncSave").disabled = false; $("syncSave").textContent = "Αποθήκευση";
+        $("syncErr").textContent = e.message;
+      });
+    });
+  }
+  function renderSyncSettings(){
+    if (!$("syncRoleText")) return;
+    var on = syncEnabled();
+    $("syncOffBtn").classList.toggle("hidden", !on);
+    $("syncNowBtn").classList.toggle("hidden", !on);
+    $("syncRoleText").textContent = !on
+      ? "Ρύθμισε τον συγχρονισμό για να βλέπεις τα ίδια δεδομένα σε κινητό και υπολογιστή."
+      : (isRequester()
+          ? "Αυτή η συσκευή («" + deviceName() + "») ζητά έγκριση από το κινητό σε κάθε άνοιγμα και δεν αποθηκεύει δεδομένα τοπικά."
+          : "Αυτή η συσκευή («" + deviceName() + "») κρατά το κλειδί και εγκρίνει τις άλλες συσκευές.");
+    setSyncStatus(syncState, syncMsg);
+  }
+
+  function openSyncOffModal(){
+    var warn = isRequester()
+      ? "Αυτή η συσκευή δεν αποθηκεύει δεδομένα τοπικά. Μετά την αποσύνδεση δεν θα μπορείς να μπεις σε αυτήν χωρίς να ξαναρυθμίσεις τον συγχρονισμό."
+      : "Τα δεδομένα παραμένουν σε αυτή τη συσκευή. Οι άλλες συσκευές δεν θα ενημερώνονται πλέον.";
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>Αποσύνδεση από τον συγχρονισμό;</h3>'+
+      '<p style="color:var(--muted); font-size:13px;">'+warn+'</p>'+
+      '<div class="modalActions"><button class="cancel" id="soCancel">Άκυρο</button><button class="confirm danger" id="soConfirm">Αποσύνδεση</button></div>'+
+      '</div>'
+    );
+    $("soCancel").addEventListener("click", closeModal);
+    $("soConfirm").addEventListener("click", function(){
+      localStorage.removeItem(GH_TOKEN_KEY);
+      localStorage.removeItem(GIST_ID_KEY);
+      localStorage.removeItem(ROLE_KEY);
+      localStorage.removeItem(LAST_SYNC_KEY);
+      closeModal();
+      location.reload();
     });
   }
 
@@ -1655,13 +2212,14 @@
     });
   }
 
+  boot();
 })();
 </script>
 
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=15').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=16').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
