@@ -1291,9 +1291,11 @@
     $("bioDisableBtn").addEventListener("click", onDisableBiometric);
     $("syncSetupBtn").addEventListener("click", openSyncSetupModal);
     $("syncNowBtn").addEventListener("click", function(){
+      /* ΠΟΤΕ ανεπιφύλακτο push: το cloudPull ανεβάζει μόνο του όταν χρειάζεται.
+         Παλιότερα το κουμπί έσπρωχνε πάντα την τοπική εικόνα και μπορούσε να
+         γράψει πάνω σε νεότερα δεδομένα της άλλης συσκευής. */
       cloudPull().then(function(changed){
         if (changed) refreshAllViews();
-        return cloudPush();
       }).catch(function(e){ setSyncStatus("err", e.message); });
     });
     $("syncOffBtn").addEventListener("click", openSyncOffModal);
@@ -2140,6 +2142,12 @@
     return list.map(function(e){ return e.id+":"+(e.mtime||""); }).sort().join("|") +
            "#" + Object.keys(tombs||{}).sort().join(",");
   }
+  /* Κατηγορίες και refDate δεν έχουν δικές τους χρονοσημάνσεις, οπότε τα
+     παρακολουθούμε ξεχωριστά — αλλιώς μια αλλαγή μόνο σε κατηγορίες δεν
+     αποθηκεύεται ούτε ανεβαίνει ποτέ. */
+  function metaSignature(cats, ref){
+    return JSON.stringify([(cats&&cats.income)||[], (cats&&cats.expense)||[], ref||""]);
+  }
 
   function cloudPull(){
     if (!syncEnabled() || !sessionKey) return Promise.resolve(false);
@@ -2150,28 +2158,33 @@
       if (remote.pwWrap) memPwWrap = JSON.stringify(remote.pwWrap);
       return decryptObj(sessionKey, remote.vault).then(function(data){
         var beforeLocal = stateSignature(entries, tombstones);
-        var remoteSig = stateSignature(data.entries || [], data.tombstones);
+        var beforeMeta  = metaSignature(categories, refDate);
+        var remoteSig   = stateSignature(data.entries || [], data.tombstones);
+        var remoteMeta  = metaSignature(data.categories, data.refDate);
+
         var merged = mergeVaults(data.entries, data.tombstones);
         entries = merged.entries;
         tombstones = merged.tombstones;
-        /* Το refDate δεν έχει δική του χρονοσήμανση: κρατάμε το πιο πρόσφατο αρχείο. */
+
+        /* Κατηγορίες και refDate δεν έχουν χρονοσήμανση ανά στοιχείο: νικά το
+           πιο πρόσφατο αρχείο. */
         var localUpd = curUpdated();
-        if (!localUpd || remote.updatedAt > localUpd){
+        var remoteNewer = (!localUpd || remote.updatedAt > localUpd);
+        if (remoteNewer){
           refDate = data.refDate || refDate || DEFAULT_REF;
-          /* Χωρίς συνθήκη: αν το απομακρυσμένο vault δεν έχει κατηγορίες,
-             η loadCategories επιστρέφει στη LEGACY λίστα — ποτέ στις ουδέτερες. */
           loadCategories(data.categories);
         }
         migrateEntries();
 
-        var mergedSig = stateSignature(entries, tombstones);
-        var localChanged = mergedSig !== beforeLocal;   // ήρθε κάτι νέο από το cloud
-        var remoteStale  = mergedSig !== remoteSig;     // το cloud δεν έχει ό,τι έχουμε εμείς
+        var mergedSig  = stateSignature(entries, tombstones);
+        var mergedMeta = metaSignature(categories, refDate);
+        var localChanged = (mergedSig !== beforeLocal) || (mergedMeta !== beforeMeta);
+        var remoteStale  = (mergedSig !== remoteSig)   || (mergedMeta !== remoteMeta);
 
         localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
         if (localChanged || remoteStale){
           return saveVault(true).then(function(){
-            /* Ανεβάζουμε μόνο αν το cloud δεν έχει ήδη ό,τι έχουμε. */
+            /* Ανεβάζουμε μόνο αν το cloud δεν έχει ήδη ό,τι έχουμε εμείς. */
             if (remoteStale) return cloudPush();
           }).then(function(){
             setSyncStatus("ok");
@@ -2193,7 +2206,6 @@
     if (!syncEnabled()) return;
     cloudPull().then(function(changed){
       if (changed) refreshAllViews();
-      return cloudPush();
     }).catch(function(e){ setSyncStatus("err", e.message); });
   }
 
@@ -2822,7 +2834,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=30').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=31').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
