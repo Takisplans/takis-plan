@@ -643,19 +643,31 @@
     });
   }
 
-  /* Προεπιλογές — χρησιμοποιούνται μόνο για νέο vault. Μετά οι κατηγορίες ζουν
-     μέσα στο κρυπτογραφημένο vault και τις διαχειρίζεται ο χρήστης. */
-  var DEFAULT_INCOME_CATEGORIES = ["Μισθός","Δώρο Πάσχα","Δώρο Χριστουγέννων","Επίδομα Αδείας","Bonus","Έσοδα από Τυχερά Παιχνίδια","Έσοδα από 2η Εργασία","Άλλο Έσοδο"];
-  var DEFAULT_EXPENSE_CATEGORIES = ["Ενοίκιο Σπίτι","ΔΕΗ Ρεύμα","ΕΥΔΑΠ","ΔΕΗ Internet","Cosmote TV","Ασφάλεια Γιώργου","Ασφάλεια Αυτοκινήτου","Δάνειο από Εργοδότη","Διατροφή Διαζυγίου","Βενζίνη Αυτοκινήτου","Διόδια","Supermarket","Οικιακές Συσκευές","Πετρέλαιο Θέρμανσης","Φαγητό από Έξω","Καπνικά","Συνδρομές σε apps","Έκτακτα Έξοδα","Μετακίνηση (Μετρό κτλ)","Ταξί","VODAFONE","Διακοπές/Ενοικίαση","Εφορία","ΕΦΚΑ","Διασκέδαση","Άλλο Έξοδο"];
+  /* Προεπιλογές για ΝΕΟ vault: ουδέτερες, γενικής χρήσης. Ο κάθε χρήστης τις
+     προσαρμόζει από τις Ρυθμίσεις. */
+  var DEFAULT_INCOME_CATEGORIES = ["Μισθός","Δώρο","Bonus","Επίδομα","Ενοίκια","Άλλο Έσοδο"];
+  var DEFAULT_EXPENSE_CATEGORIES = ["Ενοίκιο","Ρεύμα","Νερό","Θέρμανση","Internet & Σταθερό","Κινητό","Σούπερ μάρκετ","Φαγητό έξω","Μεταφορικά","Βενζίνη","Υγεία","Ασφάλειες","Δάνεια","Συνδρομές","Διασκέδαση","Ρούχα","Εφορία","Έκτακτα Έξοδα","Άλλο Έξοδο"];
+
+  /* Λίστες που υπήρχαν πριν γίνουν επεξεργάσιμες οι κατηγορίες (έως v27).
+     Χρησιμοποιούνται ΜΟΝΟ για vault που υπάρχει ήδη και δεν έχει αποθηκευμένες
+     κατηγορίες — ώστε να μη χαθεί η λίστα του υπάρχοντος χρήστη. */
+  var LEGACY_INCOME_CATEGORIES = ["Μισθός","Δώρο Πάσχα","Δώρο Χριστουγέννων","Επίδομα Αδείας","Bonus","Έσοδα από Τυχερά Παιχνίδια","Έσοδα από 2η Εργασία","Άλλο Έσοδο"];
+  var LEGACY_EXPENSE_CATEGORIES = ["Ενοίκιο Σπίτι","ΔΕΗ Ρεύμα","ΕΥΔΑΠ","ΔΕΗ Internet","Cosmote TV","Ασφάλεια Γιώργου","Ασφάλεια Αυτοκινήτου","Δάνειο από Εργοδότη","Διατροφή Διαζυγίου","Βενζίνη Αυτοκινήτου","Διόδια","Supermarket","Οικιακές Συσκευές","Πετρέλαιο Θέρμανσης","Φαγητό από Έξω","Καπνικά","Συνδρομές σε apps","Έκτακτα Έξοδα","Μετακίνηση (Μετρό κτλ)","Ταξί","VODAFONE","Διακοπές/Ενοικίαση","Εφορία","ΕΦΚΑ","Διασκέδαση","Άλλο Έξοδο"];
 
   /* Ενεργές κατηγορίες — φορτώνονται από το vault. */
   var categories = { income: DEFAULT_INCOME_CATEGORIES.slice(), expense: DEFAULT_EXPENSE_CATEGORIES.slice() };
   function catsFor(type){ return (categories && categories[type]) || []; }
+
+  /* Υπάρχον vault χωρίς αποθηκευμένες κατηγορίες => κρατάμε τις παλιές (LEGACY).
+     Ολοκαίνουργιο vault => ουδέτερες προεπιλογές. */
   function loadCategories(stored){
     categories = {
-      income: (stored && stored.income && stored.income.length) ? stored.income.slice() : DEFAULT_INCOME_CATEGORIES.slice(),
-      expense:(stored && stored.expense && stored.expense.length) ? stored.expense.slice(): DEFAULT_EXPENSE_CATEGORIES.slice()
+      income: (stored && stored.income && stored.income.length) ? stored.income.slice() : LEGACY_INCOME_CATEGORIES.slice(),
+      expense:(stored && stored.expense && stored.expense.length) ? stored.expense.slice(): LEGACY_EXPENSE_CATEGORIES.slice()
     };
+  }
+  function initCategoriesForNewVault(){
+    categories = { income: DEFAULT_INCOME_CATEGORIES.slice(), expense: DEFAULT_EXPENSE_CATEGORIES.slice() };
   }
 
   /* ================= Crypto layer (AES-256-GCM, key derived via PBKDF2 / WebAuthn PRF) ================= */
@@ -1017,7 +1029,7 @@
       var mkBytes2 = randomMkBytes();
       deriveKey(v1, newSalt).then(function(pwKey){
         return importMk(mkBytes2).then(function(mk){
-          entries = []; refDate = DEFAULT_REF; tombstones = {}; loadCategories(null);
+          entries = []; refDate = DEFAULT_REF; tombstones = {}; initCategoriesForNewVault();
           return encryptObj(pwKey, { mk: bytesToBase64(mkBytes2) }).then(function(pwWrap){
             return encryptObj(mk, { entries: entries, refDate: refDate }).then(function(vaultPayload){
               localStorage.setItem(SALT_KEY, newSalt);
@@ -2805,7 +2817,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=28').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=29').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
