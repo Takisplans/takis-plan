@@ -655,7 +655,10 @@
   var LEGACY_EXPENSE_CATEGORIES = ["Ενοίκιο Σπίτι","ΔΕΗ Ρεύμα","ΕΥΔΑΠ","ΔΕΗ Internet","Cosmote TV","Ασφάλεια Γιώργου","Ασφάλεια Αυτοκινήτου","Δάνειο από Εργοδότη","Διατροφή Διαζυγίου","Βενζίνη Αυτοκινήτου","Διόδια","Supermarket","Οικιακές Συσκευές","Πετρέλαιο Θέρμανσης","Φαγητό από Έξω","Καπνικά","Συνδρομές σε apps","Έκτακτα Έξοδα","Μετακίνηση (Μετρό κτλ)","Ταξί","VODAFONE","Διακοπές/Ενοικίαση","Εφορία","ΕΦΚΑ","Διασκέδαση","Άλλο Έξοδο"];
 
   /* Ενεργές κατηγορίες — φορτώνονται από το vault. */
-  var categories = { income: DEFAULT_INCOME_CATEGORIES.slice(), expense: DEFAULT_EXPENSE_CATEGORIES.slice() };
+  /* Αρχική τιμή = LEGACY, όχι DEFAULT. Οι ουδέτερες προεπιλογές μπαίνουν ΜΟΝΟ
+     όταν δημιουργείται νέο vault. Έτσι μια συσκευή που παίρνει τα δεδομένα από
+     το cloud (χωρίς τοπικό vault) δεν καταλήγει ποτέ με τις ουδέτερες. */
+  var categories = { income: LEGACY_INCOME_CATEGORIES.slice(), expense: LEGACY_EXPENSE_CATEGORIES.slice() };
   function catsFor(type){ return (categories && categories[type]) || []; }
 
   /* Υπάρχον vault χωρίς αποθηκευμένες κατηγορίες => κρατάμε τις παλιές (LEGACY).
@@ -2155,7 +2158,9 @@
         var localUpd = curUpdated();
         if (!localUpd || remote.updatedAt > localUpd){
           refDate = data.refDate || refDate || DEFAULT_REF;
-          if (data.categories) loadCategories(data.categories);
+          /* Χωρίς συνθήκη: αν το απομακρυσμένο vault δεν έχει κατηγορίες,
+             η loadCategories επιστρέφει στη LEGACY λίστα — ποτέ στις ουδέτερες. */
+          loadCategories(data.categories);
         }
         migrateEntries();
 
@@ -2817,7 +2822,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=29').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=30').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
