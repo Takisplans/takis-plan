@@ -194,6 +194,17 @@
   .availBox.negative .v{color:var(--red);}
   .availBox .l{font-size:12px; color:var(--muted); margin-top:2px; font-weight:600;}
   .availBox .sub{font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4;}
+  /* ---- Διαχείριση κατηγοριών ---- */
+  .catList{max-height:46vh; overflow-y:auto; margin:4px 0 14px; -webkit-overflow-scrolling:touch;}
+  .catRow{display:flex; align-items:center; gap:6px; padding:9px 4px; border-bottom:1px solid var(--border);}
+  .catName{flex:1; min-width:0; font-size:14px; display:flex; flex-direction:column; gap:2px;}
+  .catUse{font-size:11px; color:var(--muted);}
+  .catUse.free{color:#9aa3b5;}
+  .catBtn{background:none; border:none; font-size:15px; color:var(--accent); padding:6px 8px; cursor:pointer; flex:none;}
+  .catBtn.danger{color:var(--red);}
+  .catAdd{display:flex; gap:8px;}
+  .catAdd input{flex:1; padding:11px; border-radius:10px; border:1px solid var(--border); font-size:14px; min-width:0;}
+  .catAdd button{border:none; border-radius:10px; padding:11px 14px; font-weight:700; font-size:14px; background:var(--navy); color:#fff; cursor:pointer; flex:none;}
   .barChartRow.clickable{cursor:pointer; border-radius:8px;}
   .barChartRow.clickable:hover{background:#f4f6fb;}
   .barChartRow.clickable:active{opacity:.7;}
@@ -527,6 +538,13 @@
       </div>
 
       <div class="card">
+        <h2>🏷️ Κατηγορίες</h2>
+        <p class="secNote">Πρόσθεσε, μετονόμασε ή αφαίρεσε κατηγορίες. Οι δικές σου κατηγορίες αποθηκεύονται κρυπτογραφημένα μαζί με τα υπόλοιπα δεδομένα.</p>
+        <button class="settingsBtn" id="catsExpenseBtn">💸 Κατηγορίες εξόδων</button>
+        <button class="settingsBtn" id="catsIncomeBtn">💰 Κατηγορίες εσόδων</button>
+      </div>
+
+      <div class="card">
         <h2>Λογαριασμός</h2>
         <button class="settingsBtn" id="changePwBtn">🔑 Αλλαγή κωδικού</button>
         <button class="settingsBtn" id="changeRefBtn">📅 Ημερομηνία έναρξης αποταμίευσης</button>
@@ -625,8 +643,20 @@
     });
   }
 
-  var INCOME_CATEGORIES = ["Μισθός","Δώρο Πάσχα","Δώρο Χριστουγέννων","Επίδομα Αδείας","Bonus","Έσοδα από Τυχερά Παιχνίδια","Έσοδα από 2η Εργασία","Άλλο Έσοδο"];
-  var EXPENSE_CATEGORIES = ["Ενοίκιο Σπίτι","ΔΕΗ Ρεύμα","ΕΥΔΑΠ","ΔΕΗ Internet","Cosmote TV","Ασφάλεια Γιώργου","Ασφάλεια Αυτοκινήτου","Δάνειο από Εργοδότη","Διατροφή Διαζυγίου","Βενζίνη Αυτοκινήτου","Διόδια","Supermarket","Οικιακές Συσκευές","Πετρέλαιο Θέρμανσης","Φαγητό από Έξω","Καπνικά","Συνδρομές σε apps","Έκτακτα Έξοδα","Μετακίνηση (Μετρό κτλ)","Ταξί","VODAFONE","Διακοπές/Ενοικίαση","Εφορία","ΕΦΚΑ","Διασκέδαση","Άλλο Έξοδο"];
+  /* Προεπιλογές — χρησιμοποιούνται μόνο για νέο vault. Μετά οι κατηγορίες ζουν
+     μέσα στο κρυπτογραφημένο vault και τις διαχειρίζεται ο χρήστης. */
+  var DEFAULT_INCOME_CATEGORIES = ["Μισθός","Δώρο Πάσχα","Δώρο Χριστουγέννων","Επίδομα Αδείας","Bonus","Έσοδα από Τυχερά Παιχνίδια","Έσοδα από 2η Εργασία","Άλλο Έσοδο"];
+  var DEFAULT_EXPENSE_CATEGORIES = ["Ενοίκιο Σπίτι","ΔΕΗ Ρεύμα","ΕΥΔΑΠ","ΔΕΗ Internet","Cosmote TV","Ασφάλεια Γιώργου","Ασφάλεια Αυτοκινήτου","Δάνειο από Εργοδότη","Διατροφή Διαζυγίου","Βενζίνη Αυτοκινήτου","Διόδια","Supermarket","Οικιακές Συσκευές","Πετρέλαιο Θέρμανσης","Φαγητό από Έξω","Καπνικά","Συνδρομές σε apps","Έκτακτα Έξοδα","Μετακίνηση (Μετρό κτλ)","Ταξί","VODAFONE","Διακοπές/Ενοικίαση","Εφορία","ΕΦΚΑ","Διασκέδαση","Άλλο Έξοδο"];
+
+  /* Ενεργές κατηγορίες — φορτώνονται από το vault. */
+  var categories = { income: DEFAULT_INCOME_CATEGORIES.slice(), expense: DEFAULT_EXPENSE_CATEGORIES.slice() };
+  function catsFor(type){ return (categories && categories[type]) || []; }
+  function loadCategories(stored){
+    categories = {
+      income: (stored && stored.income && stored.income.length) ? stored.income.slice() : DEFAULT_INCOME_CATEGORIES.slice(),
+      expense:(stored && stored.expense && stored.expense.length) ? stored.expense.slice(): DEFAULT_EXPENSE_CATEGORIES.slice()
+    };
+  }
 
   /* ================= Crypto layer (AES-256-GCM, key derived via PBKDF2 / WebAuthn PRF) ================= */
   function bytesToBase64(bytes){
@@ -789,7 +819,7 @@
 
   function saveVault(skipPush){
     if (!sessionKey) return Promise.resolve();
-    return encryptObj(sessionKey, { entries: entries, refDate: refDate, tombstones: tombstones }).then(function(payload){
+    return encryptObj(sessionKey, { entries: entries, refDate: refDate, tombstones: tombstones, categories: categories }).then(function(payload){
       var stamp = new Date().toISOString();
       memVault = payload; memVaultUpdated = stamp;
       if (!isRequester()){
@@ -913,6 +943,7 @@
       return decryptObj(sessionKey, vaultPayload).then(function(data){
         entries = data.entries || [];
         tombstones = data.tombstones || {};
+        loadCategories(data.categories);
         refDate = data.refDate || DEFAULT_REF;
         bioBtn.disabled = false;
         bioBtn.textContent = "👆 Βιομετρικό Unlock";
@@ -946,6 +977,7 @@
                 sessionKey = mk; mkRawBytes = mkBytes;
                 entries = data.entries || []; refDate = data.refDate || DEFAULT_REF;
                 tombstones = data.tombstones || {};
+        loadCategories(data.categories);
               });
             });
           });
@@ -955,6 +987,7 @@
           return decryptObj(pwKey, legacyVault).then(function(data){
             entries = data.entries || []; refDate = data.refDate || DEFAULT_REF;
             tombstones = data.tombstones || {};
+        loadCategories(data.categories);
             var mkBytes = randomMkBytes();
             return importMk(mkBytes).then(function(mk){
               return encryptObj(pwKey, { mk: bytesToBase64(mkBytes) }).then(function(pwWrap){
@@ -984,7 +1017,7 @@
       var mkBytes2 = randomMkBytes();
       deriveKey(v1, newSalt).then(function(pwKey){
         return importMk(mkBytes2).then(function(mk){
-          entries = []; refDate = DEFAULT_REF; tombstones = {};
+          entries = []; refDate = DEFAULT_REF; tombstones = {}; loadCategories(null);
           return encryptObj(pwKey, { mk: bytesToBase64(mkBytes2) }).then(function(pwWrap){
             return encryptObj(mk, { entries: entries, refDate: refDate }).then(function(vaultPayload){
               localStorage.setItem(SALT_KEY, newSalt);
@@ -1164,7 +1197,7 @@
       $("segExpense").classList.toggle("active", type==="expense");
       var sel = $("fCategory");
       sel.innerHTML = "";
-      var cats = type==="income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+      var cats = catsFor(type);
       cats.forEach(function(c){
         var opt = document.createElement("option");
         opt.value = c; opt.textContent = c;
@@ -1249,6 +1282,8 @@
       }).catch(function(e){ setSyncStatus("err", e.message); });
     });
     $("syncOffBtn").addEventListener("click", openSyncOffModal);
+    $("catsExpenseBtn").addEventListener("click", function(){ openCategoriesModal("expense"); });
+    $("catsIncomeBtn").addEventListener("click", function(){ openCategoriesModal("income"); });
 
     renderSyncSettings();
     renderSettings();
@@ -2106,7 +2141,10 @@
         tombstones = merged.tombstones;
         /* Το refDate δεν έχει δική του χρονοσήμανση: κρατάμε το πιο πρόσφατο αρχείο. */
         var localUpd = curUpdated();
-        if (!localUpd || remote.updatedAt > localUpd) refDate = data.refDate || refDate || DEFAULT_REF;
+        if (!localUpd || remote.updatedAt > localUpd){
+          refDate = data.refDate || refDate || DEFAULT_REF;
+          if (data.categories) loadCategories(data.categories);
+        }
         migrateEntries();
 
         var mergedSig = stateSignature(entries, tombstones);
@@ -2401,6 +2439,110 @@
     setSyncStatus(syncState, syncMsg);
   }
 
+  /* ================= Διαχείριση κατηγοριών ================= */
+  function categoryUsage(name, type){
+    return entries.filter(function(e){ return e.type === type && e.category === name; }).length;
+  }
+
+  function openCategoriesModal(type){
+    var label = type === "income" ? "εσόδων" : "εξόδων";
+    var list = catsFor(type);
+    var rows = list.map(function(c){
+      var used = categoryUsage(c, type);
+      return '<div class="catRow">'+
+        '<div class="catName">'+escapeHtml(c)+
+          (used ? '<span class="catUse">'+used+' καταχ.</span>' : '<span class="catUse free">αχρησιμοποίητη</span>')+
+        '</div>'+
+        '<button class="catBtn" data-ren="'+escapeHtml(c)+'" title="Μετονομασία">✎</button>'+
+        '<button class="catBtn danger" data-del="'+escapeHtml(c)+'" title="Αφαίρεση">✕</button>'+
+      '</div>';
+    }).join("");
+
+    openModal(
+      '<div class="modalBox" id="catsBox">'+
+      '<h3>Κατηγορίες '+label+'</h3>'+
+      '<div class="catList">'+(list.length?rows:'<div class="emptyMsg">Καμία κατηγορία</div>')+'</div>'+
+      '<div class="catAdd">'+
+        '<input type="text" id="catNew" placeholder="Νέα κατηγορία" autocomplete="off">'+
+        '<button class="confirm" id="catAddBtn">Προσθήκη</button>'+
+      '</div>'+
+      '<div class="lockErr" id="catErr"></div>'+
+      '<div class="modalActions"><button class="confirm" id="catsClose">Κλείσιμο</button></div>'+
+      '</div>'
+    );
+    $("catsClose").addEventListener("click", closeModal);
+
+    $("catAddBtn").addEventListener("click", function(){
+      var v = $("catNew").value.trim();
+      if (!v){ $("catErr").textContent = "Γράψε ένα όνομα"; return; }
+      if (catsFor(type).some(function(c){ return c.toLowerCase() === v.toLowerCase(); })){
+        $("catErr").textContent = "Υπάρχει ήδη"; return;
+      }
+      categories[type].push(v);
+      saveVault();
+      openCategoriesModal(type);
+    });
+    $("catNew").addEventListener("keydown", function(e){ if (e.key === "Enter") $("catAddBtn").click(); });
+
+    Array.prototype.forEach.call($("catsBox").querySelectorAll("[data-ren]"), function(b){
+      b.addEventListener("click", function(){ openRenameCategoryModal(b.getAttribute("data-ren"), type); });
+    });
+    Array.prototype.forEach.call($("catsBox").querySelectorAll("[data-del]"), function(b){
+      b.addEventListener("click", function(){ openDeleteCategoryModal(b.getAttribute("data-del"), type); });
+    });
+  }
+
+  function openRenameCategoryModal(oldName, type){
+    var used = categoryUsage(oldName, type);
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>Μετονομασία κατηγορίας</h3>'+
+      (used ? '<p style="color:var(--muted); font-size:13px;">Θα ενημερωθούν και οι '+used+' υπάρχουσες καταχωρήσεις.</p>' : '')+
+      '<input type="text" id="renInput" value="'+escapeHtml(oldName)+'" autocomplete="off">'+
+      '<div class="lockErr" id="renErr"></div>'+
+      '<div class="modalActions"><button class="cancel" id="renCancel">Άκυρο</button><button class="confirm" id="renOk">Αποθήκευση</button></div>'+
+      '</div>'
+    );
+    $("renCancel").addEventListener("click", function(){ openCategoriesModal(type); });
+    $("renOk").addEventListener("click", function(){
+      var v = $("renInput").value.trim();
+      if (!v){ $("renErr").textContent = "Γράψε ένα όνομα"; return; }
+      if (v === oldName){ openCategoriesModal(type); return; }
+      if (catsFor(type).some(function(c){ return c.toLowerCase() === v.toLowerCase(); })){
+        $("renErr").textContent = "Υπάρχει ήδη άλλη κατηγορία με αυτό το όνομα"; return;
+      }
+      categories[type] = categories[type].map(function(c){ return c === oldName ? v : c; });
+      entries.forEach(function(e){
+        if (e.type === type && e.category === oldName){ e.category = v; touch(e); }
+      });
+      saveVault();
+      refreshAllViews();
+      openCategoriesModal(type);
+    });
+  }
+
+  function openDeleteCategoryModal(name, type){
+    var used = categoryUsage(name, type);
+    /* Δεν σβήνουμε ποτέ καταχωρήσεις: η κατηγορία απλώς φεύγει από τη λίστα επιλογής. */
+    openModal(
+      '<div class="modalBox">'+
+      '<h3>Αφαίρεση «'+escapeHtml(name)+'»;</h3>'+
+      '<p style="color:var(--muted); font-size:13px;">'+
+        (used
+          ? 'Χρησιμοποιείται σε <b>'+used+'</b> καταχωρήσεις. Οι καταχωρήσεις <b>δεν διαγράφονται</b> και θα συνεχίσουν να φαίνονται κανονικά στο Ιστορικό και στα Γραφήματα — η κατηγορία απλώς δεν θα εμφανίζεται πλέον στη λίστα για νέες καταχωρήσεις.'
+          : 'Δεν χρησιμοποιείται σε καμία καταχώρηση.')+
+      '</p>'+
+      '<div class="modalActions"><button class="cancel" id="delCatCancel">Άκυρο</button><button class="confirm danger" id="delCatOk">Αφαίρεση</button></div>'+
+      '</div>'
+    );
+    $("delCatCancel").addEventListener("click", function(){ openCategoriesModal(type); });
+    $("delCatOk").addEventListener("click", function(){
+      categories[type] = categories[type].filter(function(c){ return c !== name; });
+      saveVault();
+      openCategoriesModal(type);
+    });
+  }
+
   function openSyncOffModal(){
     var warn = isRequester()
       ? "Αυτή η συσκευή δεν αποθηκεύει δεδομένα τοπικά. Μετά την αποσύνδεση δεν θα μπορείς να μπεις σε αυτήν χωρίς να ξαναρυθμίσεις τον συγχρονισμό."
@@ -2460,7 +2602,12 @@
     function fillCategories(type){
       var sel = $("editCategory");
       sel.innerHTML = "";
-      var cats = type==="income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+      var cats = catsFor(type).slice();
+      /* Αν η κατηγορία της καταχώρησης έχει αφαιρεθεί, τη δείχνουμε ούτως ή άλλως
+         για να μην αλλάξει σιωπηλά κατά την επεξεργασία. */
+      if (type === entry.type && entry.category && cats.indexOf(entry.category) === -1){
+        cats.unshift(entry.category);
+      }
       cats.forEach(function(c){
         var opt = document.createElement("option");
         opt.value = c; opt.textContent = c;
@@ -2658,7 +2805,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=27').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=28').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
