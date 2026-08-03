@@ -595,7 +595,7 @@
      άρα το ίδιο όριο θα ήταν βασανιστικό. */
   var IDLE_LIMIT_MS = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ? 5*60*1000 : 30*60*1000;
   var PRF_INFO = "TakisPlanBiometricUnlockV1";
-  var APP_VERSION = "32";   /* ΑΥΞΗΣΕ ΤΟ ΣΕ ΚΑΘΕ RELEASE, μαζί με το CACHE_NAME στο sw.js */
+  var APP_VERSION = "33";   /* ΑΥΞΗΣΕ ΤΟ ΣΕ ΚΑΘΕ RELEASE, μαζί με το CACHE_NAME στο sw.js */
 
   /* ---- Cloud sync (private GitHub Gist) ---- */
   var GH_TOKEN_KEY = "tp_gh_token_v1";
@@ -1528,6 +1528,7 @@
         touch(entry);
         saveVault();
         renderPayments();
+        renderAvailable();   // τα «Διαθέσιμα σήμερα» εξαρτώνται από τις πληρωμές
       });
     });
   }
@@ -2866,7 +2867,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=32').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=33').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
