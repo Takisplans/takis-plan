@@ -205,6 +205,12 @@
   .catAdd{display:flex; gap:8px;}
   .catAdd input{flex:1; padding:11px; border-radius:10px; border:1px solid var(--border); font-size:14px; min-width:0;}
   .catAdd button{border:none; border-radius:10px; padding:11px 14px; font-weight:700; font-size:14px; background:var(--navy); color:#fff; cursor:pointer; flex:none;}
+  .verBox{
+    text-align:center; color:var(--muted); font-size:12px; line-height:1.7;
+    padding:6px 0 4px; margin-bottom:6px;
+  }
+  .verBox b{color:var(--navy); font-weight:700;}
+  .verBox .stale{color:var(--red); font-weight:700; display:block; margin-top:4px;}
   .barChartRow.clickable{cursor:pointer; border-radius:8px;}
   .barChartRow.clickable:hover{background:#f4f6fb;}
   .barChartRow.clickable:active{opacity:.7;}
@@ -510,7 +516,7 @@
     <section id="view-settings" class="hidden">
       <div class="card">
         <h2>🔐 Ασφάλεια</h2>
-        <p class="secNote">Όλα τα δεδομένα σου (έσοδα, έξοδα, αντίγραφα ασφαλείας) κρυπτογραφούνται με AES-256 μέσω ενός κλειδιού που προστατεύεται είτε από τον κωδικό σου είτε από το βιομετρικό σου. Χωρίς αυτά, κανείς δεν μπορεί να διαβάσει τα δεδομένα. Η εφαρμογή κλειδώνει αυτόματα όταν αλλάζεις εφαρμογή/οθόνη ή μετά από 5 λεπτά αδράνειας.</p>
+        <p class="secNote">Όλα τα δεδομένα σου (έσοδα, έξοδα, αντίγραφα ασφαλείας) κρυπτογραφούνται με AES-256 μέσω ενός κλειδιού που προστατεύεται είτε από τον κωδικό σου είτε από το βιομετρικό σου. Χωρίς αυτά, κανείς δεν μπορεί να διαβάσει τα δεδομένα. Η εφαρμογή κλειδώνει αυτόματα μετά από <span id="idleMins">5</span> λεπτά αδράνειας<span id="idleMobileNote"> και μόλις αλλάξεις εφαρμογή ή οθόνη</span>.</p>
       </div>
 
       <div class="card">
@@ -551,6 +557,8 @@
         <button class="settingsBtn danger" id="resetDataBtn">🗑️ Διαγραφή όλων των δεδομένων</button>
         <button class="settingsBtn" id="lockNowBtn">🔒 Κλείδωμα εφαρμογής</button>
       </div>
+
+      <div class="verBox" id="verBox">—</div>
     </section>
   </main>
 
@@ -587,6 +595,7 @@
      άρα το ίδιο όριο θα ήταν βασανιστικό. */
   var IDLE_LIMIT_MS = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ? 5*60*1000 : 30*60*1000;
   var PRF_INFO = "TakisPlanBiometricUnlockV1";
+  var APP_VERSION = "32";   /* ΑΥΞΗΣΕ ΤΟ ΣΕ ΚΑΘΕ RELEASE, μαζί με το CACHE_NAME στο sw.js */
 
   /* ---- Cloud sync (private GitHub Gist) ---- */
   var GH_TOKEN_KEY = "tp_gh_token_v1";
@@ -1303,6 +1312,7 @@
     $("catsIncomeBtn").addEventListener("click", function(){ openCategoriesModal("income"); });
 
     renderSyncSettings();
+    renderVersionBox();
     renderSettings();
     renderDashboard();
   }
@@ -2455,6 +2465,28 @@
       });
     });
   }
+  /* Δείχνει την έκδοση που τρέχει ΠΡΑΓΜΑΤΙΚΑ αυτή η συσκευή, και προειδοποιεί αν
+     ο service worker έχει κολλήσει σε παλιότερη — που ήταν η αιτία πολλών
+     «δεν άλλαξε τίποτα στο κινητό». */
+  function renderVersionBox(){
+    var el = $("verBox");
+    if (!el) return;
+    var swVer = "—";
+    try {
+      var c = navigator.serviceWorker && navigator.serviceWorker.controller;
+      if (c){ var m = c.scriptURL.match(/[?&]v=(\d+)/); if (m) swVer = m[1]; }
+    } catch(e){}
+    if ($("idleMins")) $("idleMins").textContent = String(Math.round(IDLE_LIMIT_MS/60000));
+    if ($("idleMobileNote")) $("idleMobileNote").style.display = isDesktop ? "none" : "";
+    var stale = (swVer !== "—" && swVer !== APP_VERSION);
+    el.innerHTML =
+      'Takis Plan · έκδοση <b>' + APP_VERSION + '</b>' +
+      (swVer !== "—" ? ' · service worker <b>' + swVer + '</b>' : '') +
+      '<br>' + escapeHtml(deviceName()) +
+      (syncEnabled() ? (isRequester() ? ' · ζητά έγκριση' : ' · εγκρίνει') : ' · χωρίς συγχρονισμό') +
+      (stale ? '<span class="stale">Προσοχή: κλείσε και άνοιξε ξανά την εφαρμογή για ενημέρωση.</span>' : '');
+  }
+
   function renderSyncSettings(){
     if (!$("syncRoleText")) return;
     var on = syncEnabled();
@@ -2834,7 +2866,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=31').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=32').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
