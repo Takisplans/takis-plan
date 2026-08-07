@@ -500,7 +500,7 @@
 
       <div class="card">
         <h2 id="expenseBreakdownTitle">Έξοδα ανά κατηγορία (τρέχων μήνας)</h2>
-        <div class="payHint">Πάτα μια κατηγορία για αναλυτική εικόνα.</div>
+        <div class="payHint" id="expBreakdownHint">Πάτα μια κατηγορία για αναλυτική εικόνα.</div>
         <div id="expenseBreakdownTotal" style="font-weight:800; font-size:16px; color:var(--red); margin:-4px 0 14px;">Σύνολο: 0,00 €</div>
         <div id="expenseBreakdown"></div>
       </div>
@@ -595,7 +595,7 @@
      άρα το ίδιο όριο θα ήταν βασανιστικό. */
   var IDLE_LIMIT_MS = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ? 5*60*1000 : 30*60*1000;
   var PRF_INFO = "TakisPlanBiometricUnlockV1";
-  var APP_VERSION = "33";   /* ΑΥΞΗΣΕ ΤΟ ΣΕ ΚΑΘΕ RELEASE, μαζί με το CACHE_NAME στο sw.js */
+  var APP_VERSION = "34";   /* ΑΥΞΗΣΕ ΤΟ ΣΕ ΚΑΘΕ RELEASE, μαζί με το CACHE_NAME στο sw.js */
 
   /* ---- Cloud sync (private GitHub Gist) ---- */
   var GH_TOKEN_KEY = "tp_gh_token_v1";
@@ -1402,6 +1402,19 @@
     return arr;
   }
 
+  /* Άθροισμα ΠΛΗΡΩΜΕΝΩΝ ανά κατηγορία. Παλιότερα η μπάρα στα Γραφήματα έδειχνε
+     πόσα είχαν "τρέξει" ημερολογιακά — που σήμαινε ότι ένα πληρωμένο έξοδο με
+     μελλοντική ημερομηνία εμφανιζόταν ως απλήρωτο. */
+  function categoryPaidBreakdown(ym, type){
+    var map = {};
+    entries.forEach(function(e){
+      if (monthKey(e.date)===ym && e.type===type && e.paid){
+        map[e.category] = (map[e.category]||0) + (Number(e.amount)||0);
+      }
+    });
+    return Object.keys(map).map(function(k){ return {category:k, amount:map[k]}; });
+  }
+
   /* ================= Rendering ================= */
   function renderDashboard(){
     $("monthLabel").textContent = monthLabel(state.dashMonth);
@@ -1767,9 +1780,14 @@
     var incTotal = incData.reduce(function(s,a){ return s+a.amount; }, 0);
     $("expenseBreakdownTotal").textContent = "Σύνολο: " + money(expTotal);
     $("incomeBreakdownTotal").textContent = "Σύνολο: " + money(incTotal);
+    if ($("expBreakdownHint")){
+      $("expBreakdownHint").textContent = chartScope === "month"
+        ? "Το πράσινο δείχνει τι έχει πληρωθεί. Πάτα μια κατηγορία για αναλυτικά."
+        : "Πάτα μια κατηγορία για αναλυτική εικόνα.";
+    }
     if (chartScope === "month"){
-      var expSoFar = categoryBreakdown(state.chartMonth,"expense", todayStr());
-      renderBreakdownRemaining("expenseBreakdown", expData, expSoFar, "var(--red)");
+      var expPaid = categoryPaidBreakdown(state.chartMonth,"expense");
+      renderBreakdownRemaining("expenseBreakdown", expData, expPaid, "var(--red)");
     } else {
       renderBreakdown("expenseBreakdown", expData, "var(--red)");
     }
@@ -1855,24 +1873,30 @@
     }).join("");
   }
 
-  function renderBreakdownRemaining(elId, fullArr, soFarArr, color){
+  /* Η μπάρα δείχνει πόσα από το σύνολο της κατηγορίας έχουν ΠΛΗΡΩΘΕΙ:
+     γεμάτο πράσινο = πληρωμένα, ξεθωριασμένο κόκκινο = υπόλοιπο. */
+  function renderBreakdownRemaining(elId, fullArr, paidArr, color){
     var box = $(elId);
     if (!fullArr.length){ box.innerHTML = '<div class="emptyMsg">Χωρίς δεδομένα</div>'; return; }
-    var soFarMap = {};
-    soFarArr.forEach(function(a){ soFarMap[a.category] = a.amount; });
+    var paidMap = {};
+    paidArr.forEach(function(a){ paidMap[a.category] = a.amount; });
     var max = Math.max.apply(null, fullArr.map(function(a){return a.amount;}));
     box.innerHTML = fullArr.map(function(a){
-      var soFar = soFarMap[a.category] || 0;
+      var paid = paidMap[a.category] || 0;
+      var left = Math.max(0, a.amount - paid);
       var pct = Math.max(4, Math.round((a.amount/max)*100));
-      var soFarPct = a.amount ? Math.min(100, Math.round((soFar/a.amount)*100)) : 0;
+      var paidPct = a.amount ? Math.min(100, Math.round((paid/a.amount)*100)) : 0;
+      var done = left === 0 && a.amount > 0;
       return '<div class="barChartRow clickable" data-cat="'+escapeHtml(a.category)+'"><div class="bcl" title="'+escapeHtml(a.category)+'">'+escapeHtml(a.category)+'</div>'+
         '<div class="bwrap">'+
-          '<div class="bfill" style="width:'+pct+'%;background:'+color+';opacity:.35;"></div>'+
-          '<div class="bfill" style="position:absolute; top:0; left:0; width:'+Math.round(pct*soFarPct/100)+'%;background:'+color+';"></div>'+
+          '<div class="bfill" style="width:'+pct+'%;background:'+color+';opacity:.30;"></div>'+
+          '<div class="bfill" style="position:absolute; top:0; left:0; width:'+Math.round(pct*paidPct/100)+'%;background:var(--green);"></div>'+
         '</div>'+
-        '<div class="bval" style="width:auto; min-width:78px; line-height:1.25;">'+
-          '<div style="font-weight:700;">'+money(soFar)+'</div>'+
-          '<div style="font-size:10px; color:var(--muted); font-weight:400;">από '+money(a.amount)+'</div>'+
+        '<div class="bval" style="width:auto; min-width:86px; line-height:1.25;">'+
+          '<div style="font-weight:700; color:'+(done?'var(--green)':'var(--red)')+';">'+
+            (done ? 'πληρώθηκε' : money(left))+'</div>'+
+          '<div style="font-size:10px; color:var(--muted); font-weight:400;">'+
+            (done ? money(a.amount) : 'εκκρεμεί από '+money(a.amount))+'</div>'+
         '</div></div>';
     }).join("");
   }
@@ -2867,7 +2891,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=33').catch(function(err){
+    navigator.serviceWorker.register('sw.js?v=34').catch(function(err){
       console.log('SW registration failed', err);
     });
   });
